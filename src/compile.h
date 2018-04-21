@@ -3,6 +3,7 @@ using namespace std;
 
 extern int yylineno;
 
+
 enum DataType{
 	dt_none,
 	dt_int,
@@ -12,21 +13,23 @@ enum DataType{
 	dt_err
 };
 
+
+// Nodes of the AST
 class Node {
 private:
-	string type;	// lexeme class
-	string value;	// lexeme
-	// string name;
-
-	DataType data_type;
+	string type;			// lexeme class
+	string value;			// lexeme
+	DataType data_type;		// datatype of the node(if required)
 
 public:
-	int line_number;
+	int line_number;		// line number where the node is occuring
+
 	// Children of the Nodes
 	Node *child1;
 	Node *child2;
 	Node *child3;
-	Node(string t, string v, Node *c1, Node *c2, Node *c3){
+
+	Node (string t, string v, Node *c1, Node *c2, Node *c3) {
 		type = t;
 		value = v;
 		data_type = dt_none;
@@ -44,7 +47,6 @@ public:
 		return type;
 	}
 
-
 	DataType getDataType(){
 		return data_type;
 	}
@@ -53,10 +55,10 @@ public:
 		data_type = dt;
 	}
 	// ~Node();
-
 };
 
 
+// Parameter of a function
 class Parameter
 {
 private:
@@ -72,29 +74,38 @@ public:
 	DataType getDataType(){
 		return data_type;
 	}
-	// ~Parameter();
 
+	// ~Parameter();
 };
 
+
+// Class for the Meta data of the symbol table
 class SymbolTableAux
 {
 private:
 	DataType data_type;		// datatype of the symbol
 
-	// if symbol is a function, then following are also required
+	// if symbol is a function, then following are also required - return data type, parameter list, number of parameters
 	// i.e. data_type = dt_func
 	DataType return_type;
+	vector <Parameter> parameter_list;
+	int parameter_count;
 
 public:
-	int parameter_count;
-	vector <Parameter> parameter_list;
-	SymbolTableAux(){}
 
-	SymbolTableAux(DataType dt):data_type(dt){}
+	SymbolTableAux(){
+
+	}
+
+	SymbolTableAux(DataType dt)
+	:data_type(dt) {
+
+	}
 
 	SymbolTableAux(DataType dt, DataType rtd, vector <Parameter> params)
-	:data_type(dt), return_type(rtd), parameter_list(params), parameter_count(params.size())
-	{}
+	:data_type(dt), return_type(rtd), parameter_list(params), parameter_count(params.size()) {
+
+	}
 
 	DataType getDataType(){
 		return data_type;
@@ -103,8 +114,16 @@ public:
 	DataType getReturnDataType(){
 		return return_type;
 	}
-	// ~SymbolTableAux();
 
+	vector<Parameter> getParameterList(){
+		return parameter_list;
+	}
+
+	int getParameterCount(){
+		return parameter_count;
+	}
+
+	// ~SymbolTableAux();
 };
 
 
@@ -185,10 +204,10 @@ public:
 			if(symbols[i].find(id) !=  symbols[scope].end()){
 				SymbolTableAux temp = symbols[i].find(id)->second;
 				if(temp.getDataType() != dt_func){continue;}
-				if(temp.parameter_count != args_list.size()){continue;}
+				if(temp.getParameterCount() != args_list.size()){continue;}
 				bool flag = true;
 				int x = 0;
-				for(vector <Parameter>::iterator i = temp.parameter_list.begin(); i != temp.parameter_list.end() && x < args_list.size(); i++, x++){
+				for(vector <Parameter>::iterator i = temp.getParameterList().begin(); i != temp.getParameterList().end() && x < args_list.size(); i++, x++){
 					if (i->getDataType() != args_list[x]){
 						flag = false;
 						break;
@@ -203,9 +222,7 @@ public:
 
 	}
 	// ~SymbolTable();
-
 };
-
 
 
 class SemanticAnalysis
@@ -269,7 +286,7 @@ public:
 					error_count++;
 					node->setDataType(dt_err);
 				} else if (!checkDatatypeCoercible(node->child3->getDataType(), node->child1->getDataType())) {
-					error_message<<"Type mismatch in line number "<< node->line_number <<" : expected "<< node->child1->getDataType() << "passed " << node->child3->getDataType() <<endl;
+					error_message<<"Line Number "<< node->line_number << " : Type mismatch. Expected "<< node->child1->getDataType() << " but passed " << node->child3->getDataType()<<endl;
 					error_count++;
 					node->setDataType(dt_err);
 				} else {
@@ -281,7 +298,7 @@ public:
 			// Check if declared or not
 			if(!symtab.find(node->child1->getValue())) {
 				error_count++;
-				error_message << "Variable " << node->child1->getValue() <<" used before declaration in line number : "<< node->line_number<<endl;
+				error_message<<"Line Number "<< node->line_number<< " : Variable " << node->child1->getValue() <<" used before declaration."<<endl;
 				node->setDataType(dt_err);
 			}else {
 				node->setDataType(symtab.getDataType(node->child1->getValue()));
@@ -308,7 +325,7 @@ public:
 						*
 						*/
 				error_count++;
-				error_message << "Function Already declared."<<endl;
+				error_message << "Line Number "<< node->line_number<<" : Function Already declared."<<endl;
 				node->setDataType(dt_err);
 			}
 
@@ -354,7 +371,7 @@ public:
 				symtab.removeScope();
 			} else {
 				error_count++;
-				error_message<<"Needs integer arguments in for loop in line number "<<node->line_number<<endl;
+				error_message<<"Line Number "<<node->line_number<<" : Needs integer arguments in for loop"<<endl;
 				node->setDataType(dt_err);
 			}
 
@@ -369,7 +386,7 @@ public:
 			// Analyse the children
 			if (active_fun_ptr == NULL) {
 				error_count++;
-				error_message<<"Return statement can only be used inside a function. Incorrect usage in line number "<<node->line_number<<endl;
+				error_message<<"Line Number "<<node->line_number<<" : Return statement can only be used inside a function."<<endl;
 				node->setDataType(dt_err);
 			} else {
 				if (node->child2->getDataType() == active_fun_ptr->getReturnDataType()) {
@@ -378,7 +395,7 @@ public:
 					active_fun_ptr = NULL;
 				} else {
 					error_count++;
-					error_message<<"Typemismatch in line number "<<node->line_number<<". Return type not same as function return data type."<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Function returns wrong data type."<<endl;
 				}
 			}
 
@@ -393,7 +410,7 @@ public:
 				analyse(node->child1);
 				if(node->child1->getDataType() != node->child2->getDataType()){
 					error_count++;
-					error_message<<"Type mismatch in line number "<<node->line_number<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Type mismatch. Unable to type cast implicitly."<<endl;
 				} else {
 					node->setDataType(node->child1->getDataType());
 				}
@@ -424,7 +441,7 @@ public:
 					node->setDataType(dt_bool);
 				} else {
 					error_count++;
-					error_message<<"Data type mismatch. Unable to type cast implicitly in line number "<<node->line_number<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Data type mismatch. Unable to type cast implicitly."<<endl;
 				}
 			} else {
 				node->setDataType(node->child1->getDataType());
@@ -438,7 +455,7 @@ public:
 				analyse(node->child2);
 				if(!checkDatatypeCoercible(node->child1->getDataType(), node->child3->getDataType())){
 					error_count++;
-					error_message<<"Type mismatch. Unable to type cast implicitly in line number "<<node->line_number<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Data type mismatch. Unable to type cast implicitly."<<endl;
 				} else {
 					DataType dt1 = node->child1->getDataType();
 					DataType dt2 = node->child3->getDataType();
@@ -449,7 +466,7 @@ public:
 						node->setDataType(dt_float);
 					} else {
 						error_count++;
-						error_message<<"Invalid operands provided to '"<<node->child2->getValue()<<"' operator."<<endl;
+						error_message<<"Line Number : "<<node->line_number<<" : Invalid operands provided to '"<<node->child2->getValue()<<"' operator."<<endl;
 					}
 				}
 			}else{
@@ -462,7 +479,7 @@ public:
 				analyse(node->child2);
 				if(node->child2->getDataType() != dt_int && node->child2->getDataType() != dt_float){
 						error_count++;
-						error_message<<"Invalid operand provided to '"<<node->child1->getValue()<<"' unary operator."<<endl;
+						error_message<<"Line Number : "<<node->line_number<<" : Invalid operands provided to '"<<node->child2->getValue()<<"' unary operator."<<endl;
 				}
 				node->setDataType(node->child2->getDataType());
 			} else {
@@ -481,12 +498,12 @@ public:
 
 			if(!symtab.find(node->getValue())){
 				error_count++;
-				error_message<<"Function not declared in line number "<<node->line_number<<endl;
+				error_message<<"Line Number "<<node->line_number<<" : Function '"<< node->getValue() <<"' not declared."<<endl;
 			} else { // if declared, the arguments count and type should match
 				vector<DataType> args_list = expandArgumentsList(node->child1);
 				if(!symtab.checkFunctionArgs(node->getValue(), args_list)){
 					error_count++;
-					error_message<<"No function matches with given arguments list in line number "<<node->line_number<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Incorrect arguments passed to the function '"<< node->getValue() <<"'."<<endl;
 				} else {
 					node->setDataType(symtab.getFunctionDataType(node->getValue()));
 				}
@@ -565,8 +582,6 @@ public:
 		return res;
 	}
 
-
-
 	bool checkDatatypeCoercible(DataType dt1, DataType dt2){
 		if (dt1 == dt2) {
 			return true;
@@ -577,15 +592,15 @@ public:
 		}
 	}
 
-	// ~SemanticAnalysis();
-
 	void errors(){
 		if(error_count == 0){
-			cout<<"No Semantic Errors"<<endl;
+			cout<<"No Semantic Errors!"<<endl;
 		} else {
-			cout<<error_count<<" error(s) found!"<<endl;
+			cout<<error_count<<"  error(s) found during semantic analysis!"<<endl;
 			cout<<error_message.str()<<endl;
+			exit(2);
 		}
 	}
 
+	// ~SemanticAnalysis();
 };

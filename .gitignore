@@ -31,9 +31,9 @@
 *.out
 *.app
 
-# Output files
-src/compiler
+# Build files generated
 src/lex.yy.c
 src/parser.output
 src/parser.tab.c
 src/parser.tab.h
+src/compiler

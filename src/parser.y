@@ -18,13 +18,13 @@
 	Node *node;
 }
 
-
 %token<node> ADD SUB MUL DIV GT LT GE LE EQ NE MAIN INT TRUE FALSE FLOAT BOOL GET PUT RETURN IN OR AND IF FOR WHILE ELSE BREAK CONTINUE INTEGERS FLOATING_POINTS IDENTIFIER SEMI LB_CURLY RB_CURLY LB_ROUND RB_ROUND COMMA EQUAL
 
 %type<node> program declr_list declr variable_declr variable_list variable type func_declr parameters param_list parameter main_function statements statement condition loop for_loop while_loop return_statement read write expression logical_expression and_expression relational_expression simple_expression divmul_expression unary_expression term function_call args args_list constants operator3 operator1 operator2 unary_operator
 
-
 %start program
+
+%define parse.error verbose
 
 %%
 
@@ -274,18 +274,28 @@ unary_operator 	:	SUB
 
 %%
 
+bool syntax_success = true;
+
 void yyerror(string s){
-	cerr<<"Error in line number " << yylineno <<" : "<<s<<endl;
+	cerr<<"Line Number " << yylineno <<" : "<<s<<endl;
+	syntax_success = false;
 }
 
 int main(){
-	// Parse the input and build the tree
-	int parse_res = yyparse();
-	if(!parse_res){
-		cout<<"No Syntax Errors"<<endl;
+	// Parse the input and build the syntax tree
+	yyparse();
+	if(syntax_success){
+		cout<<"No Syntax Errors!"<<endl;
+	} else {
+		exit(1);
 	}
-	// Annotate the parse tree --> Semantic Analysis
+	cout<<"__________________________________"<<endl;
+
+	// Annotate the syntax tree --> Semantic Analysis
 	SemanticAnalysis semantic_checker(ParseTreeRoot);
-	semantic_checker.errors();
+	semantic_checker.errors();		// Print success message or the errors in semantic analysis(if any)
+	cout<<"__________________________________"<<endl;
+
+	// Generate MIPS Code
 }
 
