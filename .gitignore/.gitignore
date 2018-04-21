@@ -30,3 +30,10 @@
 *.exe
 *.out
 *.app
+
+# Output files
+src/compiler
+src/lex.yy.c
+src/parser.output
+src/parser.tab.c
+src/parser.tab.h
