@@ -280,8 +280,10 @@ void yyerror(string s){
 
 int main(){
 	// Parse the input and build the tree
-	bool parse_res = yyparse();
-
+	int parse_res = yyparse();
+	if(!parse_res){
+		cout<<"No Syntax Errors"<<endl;
+	}
 	// Annotate the parse tree --> Semantic Analysis
 	SemanticAnalysis semantic_checker(ParseTreeRoot);
 	semantic_checker.errors();
