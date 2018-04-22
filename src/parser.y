@@ -113,9 +113,9 @@ statement 	:	variable_declr
 			|   loop
 				{$$ = new Node("statement", "", $1, NULL, NULL);}
 			|	BREAK SEMI
-				{$$ = new Node("statement", "", $1, NULL, NULL);}
+				{$$ = new Node("statement", "break", $1, NULL, NULL);}
 			|	CONTINUE SEMI
-				{$$ = new Node("statement", "", $1, NULL, NULL);}
+				{$$ = new Node("statement", "continue", $1, NULL, NULL);}
 			|	return_statement SEMI
 				{$$ = new Node("statement", "", $1, NULL, NULL);}
 			|	read SEMI
@@ -283,6 +283,7 @@ void yyerror(string s){
 
 int main(){
 	// Parse the input and build the syntax tree
+	cout<<"PARSING"<<endl;
 	yyparse();
 	if(syntax_success){
 		cout<<"No Syntax Errors!"<<endl;
@@ -290,13 +291,22 @@ int main(){
 		exit(1);
 	}
 	cout<<"__________________________________"<<endl<<endl;
+	cout<<"SEMANTIC CHECK"<<endl;
 
 	// Annotate the syntax tree --> Semantic Analysis
 	SemanticAnalysis semantic_checker(ParseTreeRoot);
 	semantic_checker.errors();		// Print success message or the errors in semantic analysis(if any)
 	cout<<"__________________________________"<<endl<<endl;
+	cout<<"CODE GENERATION"<<endl;
 
 	// Generate MIPS Code
+	MIPSCode mips_code;
+	mips_code.generateCode(ParseTreeRoot);
+	mips_code.generateDataSection();
+	mips_code.generateOutput();
+
+	cout<<"Compilation Successfull!"<<endl;
+	cout<<"__________________________________"<<endl<<endl;
 
 }
 

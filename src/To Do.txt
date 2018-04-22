@@ -1,0 +1,4 @@
+Function Call MIPS
+Traditional For loop for C
+Scope statements -> {}
+Arrays

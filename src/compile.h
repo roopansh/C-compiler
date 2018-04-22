@@ -14,7 +14,6 @@ enum DataType{
 	dt_err
 };
 
-
 // Nodes of the AST
 class Node {
 private:
@@ -139,12 +138,15 @@ private:
 				// 0 => Global scope
 
 	vector < map < string, SymbolTableAux > > symbols;	// vector of maps at different scopes. vector[i] => map of symbols at scope i
+
+	string TYPE2STRING[6] = {"none", "int", "float", "bool", "func", "err"};
+
+
 public:
 	SymbolTable(){
 		scope = 0;	// global
 		symbols.push_back(map<string, SymbolTableAux>());	// empty symbols table at global scope
 	}
-
 
 	bool findInCurrentScope(string id){
 		if(symbols[scope].find(id) !=  symbols[scope].end()){
@@ -157,7 +159,7 @@ public:
 	bool find(string id){
 		for (int i = scope; i >= 0; i--)
 		{
-			if(symbols[i].find(id) !=  symbols[scope].end()){
+			if(symbols[i].find(id) !=  symbols[i].end()){
 				return true;
 			}
 		}
@@ -199,7 +201,7 @@ public:
 	DataType getFunctionDataType(string id){
 		for (int i = scope; i >= 0; i--)
 		{
-			if(symbols[i].find(id) !=  symbols[scope].end()){
+			if(symbols[i].find(id) !=  symbols[i].end()){
 				return (symbols[i].find(id))->second.getReturnDataType();
 			}
 		}
@@ -209,7 +211,7 @@ public:
 	bool checkFunctionArgs(string id, vector<DataType> args_list) {
 		for (int i = scope; i >= 0; i--)
 		{
-			if(symbols[i].find(id) !=  symbols[scope].end()){
+			if(symbols[i].find(id) !=  symbols[i].end()){
 				SymbolTableAux temp = symbols[i].find(id)->second;
 				if(temp.getDataType() != dt_func){continue;}
 				if(temp.getParameterCount() != args_list.size()){continue;}
@@ -227,8 +229,33 @@ public:
 			}
 		}
 		return false;
-
 	}
+
+	vector<string> getFunctionParameters(string id){
+		for (int i = scope; i >= 0; i--)
+		{
+			if(symbols[i].find(id) !=  symbols[i].end()){
+				vector<Parameter> param_list =  symbols[i].find(id)->second.getParameterList();
+				vector<string> res;
+				for (std::vector<Parameter>::iterator i = param_list.begin(); i != param_list.end(); ++i)
+				{
+					res.push_back(i->getValue());
+				}
+				return res;
+			}
+		}
+	}
+
+	string gen_mips(string id){
+		// return name.datatype.scope
+		for (int i = scope; i >= 0; i--) {
+			if(symbols[i].find(id) !=  symbols[scope].end()){
+				return id + "." +  TYPE2STRING[symbols[i].find(id)->second.getDataType()] + "." + to_string(i);
+			}
+		}
+		return "";
+	}
+
 	// ~SymbolTable();
 };
 
@@ -355,7 +382,23 @@ public:
 
 		} else if (node_type == "statement" ){
 			// Analyse the children
-			analyse(node->child1);
+			if(node->getValue() == "break"){
+				if (inside_loop){
+					return ;
+				} else {
+					error_count++;
+					error_message << "Line Number " << node->line_number << " : 'break' can only be used inside a loop." << endl;
+				}
+			} else if (node->getValue() == "continue"){
+				if (inside_loop){
+					return ;
+				} else {
+					error_count++;
+					error_message << "Line Number " << node->line_number << " : 'continue' can only be used inside a loop." << endl;
+				}
+			} else {
+				analyse(node->child1);
+			}
 
 		} else if (node_type == "condition" ){
 			// Analyse the children
@@ -373,7 +416,9 @@ public:
 
 		} else if (node_type == "loop" ){
 			// Analyse the children
+			inside_loop = true;
 			analyse(node->child1);
+			inside_loop = false;
 
 		} else if (node_type == "for_loop" ){
 			// Analyse the children
@@ -536,6 +581,7 @@ public:
 		} else if (node_type == "operator1" || node_type == "operator2" || node_type == "operator3" || node_type == "unary_operator" || node_type == "constants" ){
 			// Analyse the children
 			return ;
+
 		} else {
 			cout<<"ROOPANSH ABHISHEK"<<endl;
 			cout<<node->getValue()<<endl;
@@ -631,4 +677,625 @@ public:
 	}
 
 	// ~SemanticAnalysis();
+};
+
+
+class MIPSCode
+{
+private:
+	SymbolTable symtab, backup_symtab;	// backup symtab is used for pushing to stack during backup
+	stringstream mips_1, mips_2;
+	int label_counter;
+	int temp_counter;
+
+	vector<string> breaks;
+	vector<string> continues;
+
+	vector<string> allVariables;
+
+	string TYPE2STRING[6] = {"none", "int", "float", "bool", "func", "err"};
+
+public:
+	MIPSCode(){
+		mips_1 << ".text" << endl;
+		label_counter = 0;
+		temp_counter = 0;
+
+		breaks.clear();
+		continues.clear();
+		allVariables.clear();
+	}
+
+	string getNextLabel(){
+		return "label_" + to_string(label_counter++);
+	}
+
+	string getNextTempVar(){
+		return "temp" + to_string(temp_counter++);
+	}
+
+	string putLabel(string label, int param_count){
+		label = "_" + label + "_." + to_string(param_count);
+		mips_1 << label << " : " << endl;
+		return label;
+	}
+
+	string putLabel(string label){
+		mips_1 << label << " : " << endl;
+		return label;
+	}
+
+	void loadInRegister(string var, string reg){
+		// check if var is variable (load word) or number (load immediate)
+
+		if(var[0] <= '9' and var[0] >= '0')	// if number
+			mips_1 << "li\t$" << reg <<", " << var << endl;
+		else					// variable name
+		{
+			var = "_" + var;
+			mips_1 << "lw\t$" << reg <<", " << var << endl;
+			if(std::find(allVariables.begin(), allVariables.end(), var) == allVariables.end())
+				allVariables.push_back(var);
+		}
+	}
+
+	void storeInMemory(string var){
+		var = "_"+var;
+		mips_1 << "sw\t$t0, " << var << endl;
+		if(std::find(allVariables.begin(), allVariables.end(), var) == allVariables.end())
+			allVariables.push_back(var);
+	}
+
+	void ReturnFunc(){
+		mips_1 << "jr\t$ra"<<endl;
+	}
+
+	void Jump(string label){
+		mips_1 << "j\t" << label << endl;
+	}
+
+	void condition(string reg, string label){
+		mips_1 << "bgtz\t$" << reg <<", "<<label<<endl;
+	}
+
+	void functionReturnValue(string reg){
+		mips_1 << "move\t$v0, $"<< reg << endl;
+	}
+
+	void readCode(string reg){
+		mips_1 << "li\t$v0, 5" << endl;
+		mips_1 << "syscall" << endl;
+		mips_1 << "sw\t$v0, $" << reg << endl;
+	}
+
+	void writeCode(string reg){
+		mips_1 << "li\t$v0, 1" << endl;
+		mips_1 << "move\t$a0, $"<< reg << endl;
+		mips_1 << "syscall" << endl;
+	}
+
+	void pushReturnCode(){
+		mips_1 << "addi\t$sp,$sp,-4" << endl;
+		mips_1 << "sw\t$ra,0($sp)" << endl;
+	}
+
+	void popReturnCode(){
+		mips_1 << "addi\t$sp,$sp,-4" << endl;
+		mips_1 << "sw\t$ra,0($sp)" << endl;
+	}
+
+	void copy(string src, string dst){
+		mips_1 << "lw\t$t8, " << src << endl;
+		mips_1 << "sw\t$t8, " << dst << endl;
+	}
+
+	void functionCall(string fun){
+		mips_1 << "jal\t" << fun << endl;
+	}
+
+	void restoreReturn(string ret){
+		mips_1 << "sw\t$v0, " << ret << endl;
+	}
+
+	void operate(string op){
+		if(op == "&&") {
+			mips_1 << "and\t$t0, $t1, $t2" << endl;
+		} else if(op == "||") {
+			mips_1 << "or\t$t0, $t1, $t2" << endl;
+
+		} else if(op == "+") {
+			mips_1 << "add\t$t0, $t1, $t2" << endl;
+		} else if(op == "-") {
+			mips_1 << "sub\t$t0, $t1, $t2" << endl;
+
+		} else if(op == "*") {
+			mips_1 << "mult\t$t1, $t2" << endl;		// store the result in $LO
+			mips_1 << "mflo\t$t0" << endl;			// load the contents of $LO to $t0
+		} else if(op == "/") {
+			mips_1 << "div\t$t1, $t2" << endl;
+			mips_1 << "mflo\t$t0" << endl;
+
+		} else if(op == ">=") {
+			mips_1 << "slt\t$t3, $t1, $t2" << endl;		// set t3 if t1 less than t2
+			mips_1 << "xori\t$t0, $t3, 1" << endl;		// compliment t3
+		} else if(op == "<=") {
+			mips_1 << "slt\t$t3, $t2, $t1" << endl;		// set t3 if t2 less than t1
+			mips_1 << "xori\t$t0, $t3, 1" << endl;		// compliment t3
+
+		} else if(op == ">") {
+			mips_1 << "slt\t$t0, $t2, $t1" << endl;		// set t0 if t2 less than t1
+		} else if(op == "<") {
+			mips_1 << "slt\t$t0, $t1, $t2" << endl;
+
+		} else if(op == "==") {
+			mips_1 << "slt\t$t3, $t1, $t2" << endl;
+			mips_1 << "slt\t$t4, $t2, $t1" << endl;
+			mips_1 << "or\t$t5, $t3, $t4" << endl;
+			mips_1 << "xori\t$t0, $t5, 1" << endl;
+		} else if(op == "!=") {
+			mips_1 << "slt\t$t3, $t1, $t2" << endl;
+			mips_1 << "slt\t$t4, $t2, $t1" << endl;
+			mips_1 << "or\t$t0, $t3, $t4" << endl;
+		} else {
+			cerr<<"WRONG OPERATOR PASSED!";
+		}
+	}
+
+	string generateCode(Node *tree){
+		if(tree == NULL)	return "";
+
+		string node_type = tree->getType();
+
+		DEBUG cerr << node_type << endl;
+
+		if (node_type == "variable_declaration") {
+			if(tree->child3 == NULL){
+				vector<string> vars = expandVariablesList(tree->child2);
+				for(int i=0; i < vars.size(); i++)
+				{
+					symtab.addVariableInCurrentScope(vars[i], tree->child1->getDataType());
+				}
+			} else {
+				cerr<<"HERE"<<endl;
+				// add to symtab
+				symtab.addVariableInCurrentScope(tree->child2->getValue(), tree->child1->getDataType());
+				string exp = generateCode(tree->child3);
+				// store the expression register to the memory
+				loadInRegister(exp, "t0");
+				storeInMemory(symtab.gen_mips(tree->child2->getValue()));
+			}
+			return "";
+
+		} else if ( node_type == "variable") {
+			// return name.type.scope
+			return symtab.gen_mips(tree->child1->getValue());
+
+		} else if ( node_type == "function_declaration") {
+
+			vector<Parameter> params = expandParameterList(tree->child2->child1);
+
+			string label = putLabel(tree->getValue(), params.size());
+
+			symtab.addFunction(label, dt_int, params);
+			symtab.addScope();
+
+			for(int i=0;i<params.size();i++)
+			{
+				symtab.addVariableInCurrentScope(params[i].getValue(), params[i].getDataType());
+			}
+
+			string a = generateCode(tree->child3);
+			symtab.removeScope();
+
+			ReturnFunc();
+
+			return "";
+
+		} else if ( node_type == "main_function") {
+			mips_1 << "main : "<<endl;
+			symtab.addScope();
+			string a = generateCode(tree->child1);
+			symtab.removeScope();
+			ReturnFunc();
+			return "";
+
+		} else if ( node_type == "statement") {
+			if(tree->getValue() == "break"){
+				Jump(breaks.back());
+			} else if (tree->getValue() == "continue") {
+				Jump(continues.back());
+			} else {
+				generateCode(tree->child1);
+			}
+			return "";
+
+		} else if ( node_type == "condition") {
+			string start = getNextLabel();
+			string end = getNextLabel();
+
+			string a = generateCode(tree->child1);	// expression
+			// load the expression's value in t1
+			loadInRegister(a, "t1");
+			// branch to start if $t1>0
+			condition("t1", start);
+			// otherwise go to end
+			Jump(end);
+			// now add the if code (i.e. the start label)
+			putLabel(start);
+			symtab.addScope();
+			string b = generateCode(tree->child2);
+			symtab.removeScope();
+			putLabel(end);
+
+			// if else part
+			if(tree->child3 != NULL)
+			{
+				symtab.addScope();
+				string c = generateCode(tree->child3);
+				symtab.removeScope();
+			}
+			return "";
+
+		} else if ( node_type == "for_loop") {
+			string start = getNextLabel();		// start of the loop
+			string middle = getNextLabel();		// code statements
+			string con = getNextLabel();		// jump to this label on continue/condition reevaluate
+			string end = getNextLabel();		// end
+
+			string a = generateCode(tree->child1);		// variable
+			string b = generateCode(tree->child2);		// expression
+
+
+			breaks.push_back(end);		// Label to jump to on break
+			continues.push_back(con); 	// Label to jump to on continue
+
+			// start variables value from 0
+			loadInRegister("0", "t1");
+			loadInRegister("0", "t2");
+			operate("+");	// add t1 & t2 and store to t0
+			storeInMemory(a);	//store a to temp
+
+			// start of the loop
+			putLabel(start);
+
+			// check the condition - variable is less than the simple_expression value
+			// set t0 = 1 if a < b
+			string temp = getNextTempVar();
+			loadInRegister(a, "t1");
+			loadInRegister(b, "t2");
+			operate("<");
+			storeInMemory(temp);	// store t0 to temp
+
+			// if variable in expression, then jump to the code
+			loadInRegister(temp, "t1");
+			condition("t1", middle);
+			// otherwise jump to end
+			Jump(end);
+
+			putLabel(middle);
+			symtab.addScope();
+			string c = generateCode(tree->child3);
+			symtab.removeScope();
+
+			putLabel(con);
+
+			loadInRegister(a, "t1");
+			loadInRegister("1", "t2");
+			operate("+");	// add t1 & t2 and store to t0
+			storeInMemory(a);	//store a to temp
+
+			Jump(start);
+			putLabel(end);
+
+			breaks.pop_back();
+			continues.pop_back();
+			return "";
+
+		} else if ( node_type == "while_loop") {
+			string start = getNextLabel();	// start of the loop
+			string middle = getNextLabel();		// loop statements
+			string end = getNextLabel();		// terminate loop
+
+			breaks.push_back(end);
+			continues.push_back(start);
+
+			putLabel(start);
+			string a = generateCode(tree->child1);
+
+			loadInRegister(a, "t1");
+			condition("t1", middle);
+			Jump(end);
+			putLabel(middle);
+
+			symtab.addScope();
+			string b = generateCode(tree->child2);
+			symtab.removeScope();
+
+			Jump(start);
+			putLabel(end);
+
+			breaks.pop_back();
+			continues.pop_back();
+
+			return "";
+
+		} else if ( node_type == "return_statement") {
+			if(tree->child2 == NULL)
+			{
+				string a = generateCode(tree->child2);
+
+				loadInRegister(a, "t1");
+				functionReturnValue("t1");
+			}
+			ReturnFunc();
+
+			return "";
+
+		} else if ( node_type == "read") {
+			string a = generateCode(tree->child1);
+			loadInRegister(a, "t1");
+			readCode("t1");
+			return a;
+
+		} else if ( node_type == "write") {
+			string a = generateCode(tree->child1);
+			loadInRegister(a, "t1");
+			writeCode("t1");
+			return a;
+
+		} else if ( node_type == "expression") {
+			string b;
+			if(tree->getValue() == "=") {
+				string a = generateCode(tree->child2);
+				b = generateCode(tree->child1);
+				loadInRegister(a, "t1");
+				loadInRegister("0", "t2");
+				operate("+");
+				storeInMemory(b);
+			} else {
+				b = generateCode(tree->child1);
+			}
+			string ret = getNextTempVar();
+
+			loadInRegister(b, "t1");
+			loadInRegister("0", "t2");
+			operate("+");
+			storeInMemory(ret);
+			return ret;
+
+		} else if ( node_type == "logical_expression") {
+			if(tree->getValue() == "or") {
+				string a = generateCode(tree->child2);
+				string b = generateCode(tree->child1);
+				string ret = getNextTempVar();
+
+				loadInRegister(b, "t1");
+				loadInRegister(a, "t2");
+				operate("||");
+				storeInMemory(ret);
+				return ret;
+
+			} else {
+				return generateCode(tree->child1);
+			}
+
+		} else if ( node_type == "and_expression") {
+			if(tree->getValue() == "and") {
+				string a = generateCode(tree->child2);
+				string b = generateCode(tree->child1);
+				string ret = getNextTempVar();
+
+				loadInRegister(b, "t1");
+				loadInRegister(a, "t2");
+				operate("&&");
+				storeInMemory(ret);
+				return ret;
+
+			} else {
+				return generateCode(tree->child1);
+			}
+
+		} else if ( node_type == "relational_expression") {
+			if(tree->getValue() == "op")
+			{
+				string a = generateCode(tree->child3);
+				string b = generateCode(tree->child1);
+				string c = generateCode(tree->child2);
+				string ret = getNextTempVar();
+
+				loadInRegister(b, "t1");
+				loadInRegister(a, "t2");
+				operate(c);
+				storeInMemory(ret);
+				return ret;
+			} else {
+				return generateCode(tree->child1);
+			}
+
+		} else if ( node_type == "simple_expression") {
+			if(tree->getValue() == "op")
+			{
+				string a = generateCode(tree->child3);
+				string b = generateCode(tree->child1);
+				string c = generateCode(tree->child2);
+				string ret = getNextTempVar();
+
+				loadInRegister(b, "t1");
+				loadInRegister(a, "t2");
+				operate(c);
+				storeInMemory(ret);
+				return ret;
+			} else {
+				return generateCode(tree->child1);
+			}
+
+		} else if ( node_type == "divmul_expression") {
+			if(tree->getValue() == "op")
+			{
+				string a = generateCode(tree->child3);
+				string b = generateCode(tree->child1);
+				string c = generateCode(tree->child2);
+				string ret = getNextTempVar();
+
+				loadInRegister(b, "t1");
+				loadInRegister(a, "t2");
+				operate(c);
+				storeInMemory(ret);
+				return ret;
+			} else {
+				return generateCode(tree->child1);
+			}
+
+		} else if ( node_type == "unary_expression") {
+			if(tree->getValue() == "op") {
+				string a = generateCode(tree->child2);
+				string b = generateCode(tree->child1);
+				string ret = getNextTempVar();
+
+				loadInRegister("0", "t1");
+				loadInRegister(a, "t2");
+				operate(b);
+				storeInMemory(ret);
+				return ret;
+			} else {
+				return generateCode(tree->child1);
+			}
+
+		} else if ( node_type == "term") {
+			return generateCode(tree->child1);
+
+		} else if ( node_type == "constants") {
+			return tree->getValue();
+
+		} else if ( node_type == "function_call") {
+			//evaluate arguments
+
+			vector<string> args = expandArgumentsList(tree->child1);
+			vector<string> pars = symtab.getFunctionParameters("_" + tree->getValue() + "_." + to_string(args.size()));
+
+			//backup variables
+			// push the return address to stack
+			pushReturnCode();
+
+			// push the current register values to stack
+			// vector<string> backvars = mipstable.backup();
+			// for(int i=0;i<backvars.size();i++)
+			// {
+			// 	genmips(def,"push",backvars[i]);
+			// }
+
+			//set arguments
+
+			// copy args[i] to pars[i]
+			for(int i=0;i < args.size(); i++)
+			{
+				copy(args[i], pars[i]);
+			}
+
+			//call function
+			functionCall("_" + tree->getValue() + "_." + to_string(args.size()));
+
+			//restore variables
+			// pop back the stored register values from stack
+			// for(int i = backvars.size()-1;i>=0;i--)
+			// {
+			// 	genmips(def,"pop",backvars[i]);
+			// }
+			// pop back the return address from stack
+			// mipstable.restore(backvars);
+
+			popReturnCode();
+
+			string ret = getNextTempVar();
+
+			// restore the return value
+			restoreReturn(ret);
+
+			return ret;
+
+		} else if ( node_type == "unary_operator" || node_type == "operator3" || node_type == "operator2" || node_type == "operator1") {
+			return tree->getValue();
+
+		} else {
+			generateCode(tree->child1);
+			generateCode(tree->child2);
+			generateCode(tree->child3);
+			return "";
+		}
+	}
+
+	void generateDataSection(){
+		return ;
+	}
+
+	void generateOutput(){
+		cout<<mips_1.str()<<endl;
+	}
+
+	vector<string> expandVariablesList(Node *tree){
+		vector<string> res;
+		if(tree->getType() != "variable_list"){
+			return res;
+		} else if(tree->child2 == NULL){
+			res.push_back(tree->child1->getValue());
+		} else {
+			res.push_back(tree->child2->getValue());
+			vector <string> temp = expandVariablesList(tree->child1);
+			for (std::vector<string>::reverse_iterator i = temp.rbegin(); i != temp.rend(); ++i){
+				res.insert(res.begin(), *i);
+			}
+		}
+		return res;
+	}
+
+	vector <Parameter> expandParameterList(Node *tree){
+		if(tree->getType() != "parameters" || tree->child1 == NULL){
+			return vector<Parameter>();
+		} else {
+			Node *paramlist = tree->child1;
+			return expandParameterListAux(paramlist);
+		}
+	}
+
+	vector<Parameter> expandParameterListAux(Node *tree){
+		vector<Parameter> res;
+		if(tree->getType() != "parameters_list"){
+			return res;
+		}
+		if(tree->child2 == NULL){
+			res.push_back(Parameter(tree->child1->child2->getValue(), tree->child1->getDataType()));
+			return res;
+		}
+		res = expandParameterListAux(tree->child1);
+		res.push_back(Parameter(tree->child2->child2->getValue(), tree->child2->getDataType()));
+		return res;
+	}
+
+	vector<string> expandArgumentsList(Node *Tree){
+		vector<string> v;
+		v.clear();
+		if(Tree->getType() != "args" || Tree->child1 == NULL) {return v;}
+		Node *args_list = Tree->child1;
+		return expandArgumentsListAux(args_list);
+	}
+
+	vector<string> expandArgumentsListAux(Node *tree){
+		vector<string> res;
+		res.clear();
+		if(tree->getType() != "args_list"){
+			return res;
+		}
+		if(tree->child2 == NULL){
+			res.push_back(tree->child1->getValue());
+			return res;
+		}
+
+		res = expandArgumentsListAux(tree->child1);
+		res.push_back(tree->child2->getValue());
+
+		return res;
+	}
+
+
+	// ~MIPSCode();
 };
