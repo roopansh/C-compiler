@@ -289,13 +289,14 @@ int main(){
 	} else {
 		exit(1);
 	}
-	cout<<"__________________________________"<<endl;
+	cout<<"__________________________________"<<endl<<endl;
 
 	// Annotate the syntax tree --> Semantic Analysis
 	SemanticAnalysis semantic_checker(ParseTreeRoot);
 	semantic_checker.errors();		// Print success message or the errors in semantic analysis(if any)
-	cout<<"__________________________________"<<endl;
+	cout<<"__________________________________"<<endl<<endl;
 
 	// Generate MIPS Code
+
 }
 

@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#define DEBUG if(0)
 using namespace std;
 
 extern int yylineno;
@@ -73,6 +74,10 @@ public:
 
 	DataType getDataType(){
 		return data_type;
+	}
+
+	string getValue(){
+		return name;
 	}
 
 	// ~Parameter();
@@ -170,10 +175,13 @@ public:
 
 	void addScope(){
 		scope++;
-		symbols.push_back(map<string, SymbolTableAux>());
+		map<string, SymbolTableAux> newMap;
+		newMap.clear();
+		symbols.push_back(newMap);
 	}
 
 	void removeScope(){
+		if(scope == 0)	return ;
 		scope--;
 		symbols.pop_back();
 	}
@@ -181,7 +189,7 @@ public:
 	DataType getDataType(string id){
 		for (int i = scope; i >= 0; i--)
 		{
-			if(symbols[i].find(id) !=  symbols[scope].end()){
+			if(symbols[i].find(id) !=  symbols[i].end()){
 				return (symbols[i].find(id))->second.getDataType();
 			}
 		}
@@ -247,7 +255,8 @@ public:
 		if(node == NULL)	return;
 
 		string node_type = node->getType();
-		// DEBUG cerr<<node_type<<endl;
+		DEBUG cerr << node_type<<endl;
+
 		if (node_type == "program"){
 			// Analyse the children
 			analyse(node->child1);	// declaration list
@@ -302,6 +311,7 @@ public:
 				node->setDataType(dt_err);
 			}else {
 				node->setDataType(symtab.getDataType(node->child1->getValue()));
+
 			}
 
 		} else if (node_type == "function_declaration" ){
@@ -309,6 +319,10 @@ public:
 				symtab.addScope();
 				// analyse the subtree
 				vector <Parameter> params = expandParameterList(node->child2);
+				for (std::vector<Parameter>::iterator i = params.begin(); i != params.end(); ++i)
+				{
+					symtab.addVariableInCurrentScope(i->getValue(), i->getDataType());
+				}
 				// set the active function pointer
 				active_fun_ptr = symtab.addFunction(node->getValue(), node->child1->getDataType(), params);
 				// add a scope
@@ -408,9 +422,11 @@ public:
 			if(node->child2 != NULL){
 				analyse(node->child2);
 				analyse(node->child1);
-				if(node->child1->getDataType() != node->child2->getDataType()){
+
+				if(!checkDatatypeCoercible(node->child1->getDataType(), node->child2->getDataType())){
 					error_count++;
-					error_message<<"Line Number "<<node->line_number<<" : Type mismatch. Unable to type cast implicitly."<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Type mismatch. Unable to type cast implicitly.(expression)"<<endl;
+					node->setDataType(dt_err);
 				} else {
 					node->setDataType(node->child1->getDataType());
 				}
@@ -441,7 +457,8 @@ public:
 					node->setDataType(dt_bool);
 				} else {
 					error_count++;
-					error_message<<"Line Number "<<node->line_number<<" : Data type mismatch. Unable to type cast implicitly."<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Data type mismatch. Unable to type cast implicitly.(relational_expression)"<<endl;
+					node->setDataType(dt_err);
 				}
 			} else {
 				node->setDataType(node->child1->getDataType());
@@ -455,7 +472,8 @@ public:
 				analyse(node->child2);
 				if(!checkDatatypeCoercible(node->child1->getDataType(), node->child3->getDataType())){
 					error_count++;
-					error_message<<"Line Number "<<node->line_number<<" : Data type mismatch. Unable to type cast implicitly."<<endl;
+					error_message<<"Line Number "<<node->line_number<<" : Data type mismatch. Unable to type cast implicitly.(simple_expression/divmul_expression)"<<endl;
+					node->setDataType(dt_err);
 				} else {
 					DataType dt1 = node->child1->getDataType();
 					DataType dt2 = node->child3->getDataType();
@@ -467,6 +485,7 @@ public:
 					} else {
 						error_count++;
 						error_message<<"Line Number : "<<node->line_number<<" : Invalid operands provided to '"<<node->child2->getValue()<<"' operator."<<endl;
+						node->setDataType(dt_err);
 					}
 				}
 			}else{
@@ -480,8 +499,10 @@ public:
 				if(node->child2->getDataType() != dt_int && node->child2->getDataType() != dt_float){
 						error_count++;
 						error_message<<"Line Number : "<<node->line_number<<" : Invalid operands provided to '"<<node->child2->getValue()<<"' unary operator."<<endl;
+						node->setDataType(dt_err);
+				} else {
+					node->setDataType(node->child2->getDataType());
 				}
-				node->setDataType(node->child2->getDataType());
 			} else {
 				analyse(node->child1);
 				node->setDataType(node->child1->getDataType());
@@ -499,11 +520,14 @@ public:
 			if(!symtab.find(node->getValue())){
 				error_count++;
 				error_message<<"Line Number "<<node->line_number<<" : Function '"<< node->getValue() <<"' not declared."<<endl;
+				node->setDataType(dt_err);
 			} else { // if declared, the arguments count and type should match
 				vector<DataType> args_list = expandArgumentsList(node->child1);
+
 				if(!symtab.checkFunctionArgs(node->getValue(), args_list)){
 					error_count++;
 					error_message<<"Line Number "<<node->line_number<<" : Incorrect arguments passed to the function '"<< node->getValue() <<"'."<<endl;
+					node->setDataType(dt_err);
 				} else {
 					node->setDataType(symtab.getFunctionDataType(node->getValue()));
 				}
@@ -563,6 +587,7 @@ public:
 
 	vector<DataType> expandArgumentsList(Node *Tree){
 		vector<DataType> v;
+		v.clear();
 		if(Tree->getType() != "args" || Tree->child1 == NULL){return v;}
 		Node *args_list = Tree->child1;
 		return expandArgumentsListAux(args_list);
@@ -570,14 +595,17 @@ public:
 
 	vector<DataType> expandArgumentsListAux(Node *tree){
 		vector<DataType> res;
+		res.clear();
 		if(tree->getType() != "args_list"){
 			return res;
 		}
 		if(tree->child2 == NULL){
+			analyse(tree->child1);
 			res.push_back(tree->child1->getDataType());
 			return res;
 		}
 		res = expandArgumentsListAux(tree->child1);
+		analyse(tree->child2);
 		res.push_back(tree->child2->getDataType());
 		return res;
 	}
