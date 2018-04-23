@@ -30,6 +30,7 @@ public:
 	Node *child1;
 	Node *child2;
 	Node *child3;
+	Node *child4;
 
 	Node (string t, string v, Node *c1, Node *c2, Node *c3) {
 		type = t;
@@ -38,7 +39,12 @@ public:
 		child3 = c3;
 		child2 = c2;
 		child1 = c1;
+		child4 = NULL;
 		line_number = yylineno;
+	}
+
+	void addChild4(Node *c4){
+		child4 = c4;
 	}
 
 	string getValue(){
@@ -452,6 +458,12 @@ public:
 			inside_loop = false;
 
 		} else if (node_type == "for_loop" ){
+			analyse(node->child1);
+			analyse(node->child2);
+			analyse(node->child3);
+			analyse(node->child4);
+
+		} else if (node_type == "for_each_loop" ){
 			// Analyse the children
 			analyse(node->child1);
 			analyse(node->child2);
@@ -610,7 +622,7 @@ public:
 				}
 			}
 
-		} else if (node_type == "operator1" || node_type == "operator2" || node_type == "operator3" || node_type == "unary_operator" || node_type == "constants"){
+		} else if (node_type == "operator1" || node_type == "operator2" || node_type == "operator3" || node_type == "unary_operator" || node_type == "constants" || node_type == "write_string"){
 			// Analyse the children
 			return ;
 
@@ -776,22 +788,28 @@ public:
 
 		} else if (var[0] == '"') {
 			string temp = getStringVar();
-			stringLiterals.push_back(make_pair(temp ,var));
+			stringLiterals.push_back(make_pair(temp, var));
 			mips_1 << "la\t$" << reg <<", " << temp << endl;
 
 		} else {					// variable name
 			var = "_" + var;
 			mips_1 << "lw\t$" << reg <<", " << var << endl;
-			if(std::find(allVariables.begin(), allVariables.end(), make_pair(var, type)) == allVariables.end())
-				allVariables.push_back(make_pair(var, type));
+			for (std::vector<pair<string, DataType> >::iterator i = allVariables.begin(); i != allVariables.end(); ++i) {
+				if(i->first == var)
+					return;
+			}
+			allVariables.push_back(make_pair(var, type));
 		}
 	}
 
 	void storeInMemory(string var, DataType type){
 		var = "_"+var;
 		mips_1 << "sw\t$t0, " << var << endl;
-		if(std::find(allVariables.begin(), allVariables.end(), make_pair(var,type)) == allVariables.end())
-			allVariables.push_back(make_pair(var, type));
+		for (std::vector<pair<string, DataType> >::iterator i = allVariables.begin(); i != allVariables.end(); ++i) {
+			if(i->first == var)
+				return;
+		}
+		allVariables.push_back(make_pair(var, type));
 	}
 
 	void ReturnFunc(){
@@ -822,15 +840,20 @@ public:
 		mips_1 << "syscall" << endl;
 	}
 
+	void writeStringCode(string str_var){
+		mips_1 << "li\t$v0, 4" << endl;
+		mips_1 << "la\t$a0, ($" << str_var << ")" << endl;
+		mips_1 << "syscall" << endl;
+	}
+
 	void pushReturnCode(){
 		mips_1 << "addi\t$sp,$sp,-4" << endl;
 		mips_1 << "sw\t$ra,0($sp)" << endl;
 	}
 
 	void popReturnCode(){
-		mips_1 << "addi\t$sp,$sp,-4" << endl;
-		mips_1 << "sw\t$ra,0($sp)" << endl;
-	}
+		mips_1 << "lw\t$ra,0($sp)" << endl;
+		mips_1 << "addi\t$sp,$sp,4" << endl;	}
 
 	void pushCode(string loc){
 		mips_1 << "addi	$sp,$sp,-4" << endl;
@@ -854,7 +877,7 @@ public:
 	}
 
 	void restoreReturn(string ret){
-		mips_1 << "sw\t$v0, " << ret << endl;
+		mips_1 << "sw\t$v0, _" << ret << endl;
 	}
 
 	void operate(string op){
@@ -983,6 +1006,7 @@ public:
 			string end = getNextLabel();
 
 			pair<string, DataType> a = generateCode(tree->child1);	// expression
+
 			// load the expression's value in t1
 			loadInRegister(a.first, "t1", a.second);
 			// branch to start if $t1>0
@@ -1007,6 +1031,44 @@ public:
 			return make_pair("", dt_int);
 
 		} else if ( node_type == "for_loop") {
+			string start = getNextLabel();		// start of the loop
+			string middle = getNextLabel();		// code statements
+			string cond = getNextLabel();		// code statements
+			string end = getNextLabel();		// end
+
+			breaks.push_back(end);		// Label to jump to on break
+			continues.push_back(cond); 	// Label to jump to on continue
+
+			// code for expression
+			generateCode(tree->child1);
+
+			putLabel(start);
+
+			// code for condition
+			pair<string, DataType> a = generateCode(tree->child2);
+			loadInRegister(a.first, "t0", a.second);
+
+			// if condition true, jump to code statements
+			condition("t0", middle);
+			// else jump to exit
+			Jump(end);
+
+			// code statements
+			putLabel(middle);
+			generateCode(tree->child4);
+
+			putLabel(cond);
+			generateCode(tree->child3);
+
+			// code for jump to start
+			Jump(start);
+			putLabel(end);
+
+			breaks.pop_back();
+			continues.pop_back();
+			return(make_pair("", dt_int));
+
+		} else if ( node_type == "for_each_loop") {
 			string start = getNextLabel();		// start of the loop
 			string middle = getNextLabel();		// code statements
 			string con = getNextLabel();		// jump to this label on continue/condition reevaluate
@@ -1119,9 +1181,6 @@ public:
 			if(tree->getValue() == "=") {
 				pair<string, DataType> a = generateCode(tree->child2);
 				b = generateCode(tree->child1);
-				// loadInRegister(a.first, "t1", a.second);
-				// loadInRegister("0", "t2", dt_int);
-				// operate("+");
 				loadInRegister(a.first, "t0", a.second);
 				storeInMemory(b.first, b.second);
 			} else {
@@ -1129,11 +1188,8 @@ public:
 			}
 			pair<string, DataType> ret = getNextTempVar();
 
-			// loadInRegister(b.first, "t1", b.second);
-			// loadInRegister("0", "t2", dt_int);
-			// operate("+");
 			loadInRegister(b.first, "t0", b.second);
-			storeInMemory(ret.first, ret.second);
+			storeInMemory(ret.first, b.second);
 			return ret;
 
 		} else if ( node_type == "logical_expression") {
@@ -1145,7 +1201,7 @@ public:
 				loadInRegister(b.first, "t1", b.second);
 				loadInRegister(a.first, "t2", a.second);
 				operate("||");
-				storeInMemory(ret.first, ret.second);
+				storeInMemory(ret.first, dt_bool);
 				return ret;
 
 			} else {
@@ -1161,7 +1217,7 @@ public:
 				loadInRegister(b.first, "t1", b.second);
 				loadInRegister(a.first, "t2", a.second);
 				operate("&&");
-				storeInMemory(ret.first, ret.second);
+				storeInMemory(ret.first, dt_bool);
 				return ret;
 
 			} else {
@@ -1179,7 +1235,7 @@ public:
 				loadInRegister(b.first, "t1", b.second);
 				loadInRegister(a.first, "t2", a.second);
 				operate(c.first);
-				storeInMemory(ret.first, ret.second);
+				storeInMemory(ret.first, dt_bool);
 				return ret;
 			} else {
 				return generateCode(tree->child1);
@@ -1196,7 +1252,7 @@ public:
 				loadInRegister(b.first, "t1", b.second);
 				loadInRegister(a.first, "t2", a.second);
 				operate(c.first);
-				storeInMemory(ret.first, ret.second);
+				storeInMemory(ret.first, DatatypeCoercible(a.second, b.second));
 				return ret;
 			} else {
 				return generateCode(tree->child1);
@@ -1213,7 +1269,7 @@ public:
 				loadInRegister(b.first, "t1", b.second);
 				loadInRegister(a.first, "t2", a.second);
 				operate(c.first);
-				storeInMemory(ret.first, ret.second);
+				storeInMemory(ret.first, DatatypeCoercible(a.second, b.second));
 				return ret;
 			} else {
 				return generateCode(tree->child1);
@@ -1228,7 +1284,7 @@ public:
 				loadInRegister("0", "t1", dt_int);
 				loadInRegister(a.first, "t2", a.second);
 				operate(b.first);
-				storeInMemory(ret.first, ret.second);
+				storeInMemory(ret.first, DatatypeCoercible(a.second, b.second));
 				return make_pair(ret.first, ret.second);
 			} else {
 				return generateCode(tree->child1);
@@ -1283,12 +1339,16 @@ public:
 
 			// restore the return value
 			restoreReturn(ret.first);
+			ReturnFunc();
 
 			return ret;
+		} else if (node_type == "write_string") {
+			loadInRegister(tree->child1->getValue(), "t0", dt_string);
+			writeStringCode("t0");
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "unary_operator" || node_type == "operator3" || node_type == "operator2" || node_type == "operator1") {
 			return make_pair(tree->getValue(), tree->getDataType());
-
 		} else {
 			generateCode(tree->child1);
 			generateCode(tree->child2);
@@ -1387,6 +1447,16 @@ public:
 		res.push_back(tree->child2->getValue());
 
 		return res;
+	}
+
+	DataType DatatypeCoercible(DataType dt1, DataType dt2){
+		if (dt1 == dt2) {
+			return dt1;
+		} else if((dt1 == dt_int || dt1 == dt_float) && ((dt2 == dt_int || dt2 == dt_float))){
+			return dt_float;
+		} else {
+			return dt_int;
+		}
 	}
 
 

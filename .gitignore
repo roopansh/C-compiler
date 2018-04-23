@@ -37,3 +37,5 @@ src/parser.output
 src/parser.tab.c
 src/parser.tab.h
 src/compiler
+src/mips.s
+src/sample.c

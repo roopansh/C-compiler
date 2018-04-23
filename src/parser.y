@@ -18,9 +18,9 @@
 	Node *node;
 }
 
-%token<node> ADD SUB MUL DIV GT LT GE LE EQ NE MAIN INT TRUE FALSE FLOAT BOOL GET PUT RETURN IN OR AND IF FOR WHILE ELSE BREAK CONTINUE INTEGERS FLOATING_POINTS IDENTIFIER SEMI LB_CURLY RB_CURLY LB_ROUND RB_ROUND COMMA EQUAL CHAR CHARACTERS MOD STRING STRING_LITERALS
+%token<node> ADD SUB MUL DIV GT LT GE LE EQ NE MAIN INT TRUE FALSE FLOAT BOOL GET PUT RETURN IN OR AND IF FOR FOREACH WHILE ELSE BREAK CONTINUE INTEGERS FLOATING_POINTS IDENTIFIER SEMI LB_CURLY RB_CURLY LB_ROUND RB_ROUND COMMA EQUAL CHAR CHARACTERS MOD STRING STRING_LITERALS PUTS LIBRARY VOID
 
-%type<node> program declr_list declr variable_declr variable_list variable type func_declr parameters param_list parameter main_function statements statement condition loop for_loop while_loop return_statement read write expression logical_expression and_expression relational_expression simple_expression divmul_expression unary_expression term function_call args args_list constants operator3 operator1 operator2 unary_operator
+%type<node> program declr_list declr variable_declr variable_list variable type func_declr parameters param_list parameter main_function statements statement condition loop for_loop for_each_loop while_loop return_statement read write expression logical_expression and_expression relational_expression simple_expression divmul_expression unary_expression term function_call args args_list constants operator3 operator1 operator2 unary_operator write_string
 
 %start program
 
@@ -28,10 +28,13 @@
 
 %%
 
-program 	:	declr_list main_function
-				{$$ = new Node("program", "", $1, $2, NULL); ParseTreeRoot = $$;}
+program 	:	libraries declr_list main_function
+				{$$ = new Node("program", "", $2, $3, NULL); ParseTreeRoot = $$;}
 			;
 
+libraries	:	libraries LIBRARY
+			|
+			;
 
 declr_list	:	declr_list declr
 				{$$ = new Node("declaration_list", "", $1, $2, NULL);}
@@ -67,6 +70,8 @@ type	:	INT
 			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_int);}
 		| FLOAT
 			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_float);}
+		| VOID
+			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_none);}
 		| BOOL
 			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_bool);}
 		| CHAR
@@ -124,6 +129,8 @@ statement 	:	variable_declr
 				{$$ = new Node("statement", "", $1, NULL, NULL);}
 			|	read SEMI
 				{$$ = new Node("statement", "", $1, NULL, NULL);}
+			|	write_string SEMI
+				{$$ = new Node("statement", "", $1, NULL, NULL);}
 			|	write SEMI
 				{$$ = new Node("statement", "", $1, NULL, NULL);}
 			|	LB_CURLY statements RB_CURLY
@@ -140,12 +147,18 @@ condition 	: 	IF LB_ROUND expression RB_ROUND LB_CURLY statements RB_CURLY ELSE 
 
 loop	:	for_loop
 			{$$ = new Node("loop","", $1, NULL, NULL);}
+		| 	for_each_loop
+			{$$ = new Node("loop","", $1, NULL, NULL);}
 		| 	while_loop
 			{$$ = new Node("loop","", $1, NULL, NULL);}
 		;
 
-for_loop 	: 	FOR LB_ROUND variable IN simple_expression RB_ROUND LB_CURLY statements RB_CURLY
-				{$$ = new Node("for_loop","", $3, $5, $8);}
+for_each_loop 	: 	FOREACH LB_ROUND variable IN simple_expression RB_ROUND LB_CURLY statements RB_CURLY
+					{$$ = new Node("for_each_loop","", $3, $5, $8);}
+			;
+
+for_loop 	: 	FOR LB_ROUND expression SEMI expression SEMI expression RB_ROUND LB_CURLY statements RB_CURLY
+				{$$ = new Node("for_loop","", $3, $5, $7); $$->addChild4($10);}
 			;
 
 while_loop 	:	WHILE LB_ROUND expression RB_ROUND LB_CURLY statements RB_CURLY
@@ -161,6 +174,10 @@ return_statement 	: 	RETURN
 read	:	GET LB_ROUND variable RB_ROUND
 			{$$ = new Node("read","", $3, NULL, NULL);}
 		;
+
+write_string 	: 	PUTS LB_ROUND STRING_LITERALS RB_ROUND
+					{$$ = new Node("write_string", "", $3, NULL, NULL);}
+				;
 
 write 	: 	PUT LB_ROUND expression RB_ROUND
 			{$$ = new Node("write","", $3, NULL, NULL);}

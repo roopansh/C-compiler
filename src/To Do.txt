@@ -1,8 +1,0 @@
-#####Function Call MIPS
-Traditional For loop for C
-
-Arrays
-array_declr  	: 	type variable LB_SQUARE term RB_SQUARE SEMI
-					{$$ = new Node("declaration", "", $1, NULL, NULL);}
-
-get string

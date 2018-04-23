@@ -37,15 +37,18 @@ MAIN	"main"
 INT		"int"
 CHAR	"char"
 STRING	"string"
+VOID	"void"
 TRUE 	"true"
 FALSE	"false"
 FLOAT 	"float"
 BOOL	"bool"
 GET 	"get"
 PUT 	"put"
+PUTS 	"puts"
 RETURN 	"return"
 IN 		"in"
 IF 		"if"
+FOREACH	"foreach"
 FOR		"for"
 WHILE	"while"
 ELSE	"else"
@@ -56,6 +59,7 @@ CHARACTERS 						('.')
 STRING_LITERALS					(\".*\")
 INTEGERS 						([0-9]+)
 FLOATING_POINTS					([0-9]+\.[0-9]+)
+LIBRARY 						(\#include[ \n\t]*\<.+\>)|((\#include[ \t\n]*\".+\"))
 IDENTIFIER						([A-Za-z_]([A-Za-z0-9_])*)
 WHITE_SPACES 					([ \t]+)
 NEW_LINE 						([\n])
@@ -77,6 +81,7 @@ NEW_LINE 						([\n])
 {NE} 			{(yylval.node) = new Node("NE", yytext, NULL, NULL, NULL); return NE;}
 {MAIN} 			{(yylval.node) = new Node("MAIN", yytext, NULL, NULL, NULL); return MAIN;}
 {INT} 			{(yylval.node) = new Node("INT", yytext, NULL, NULL, NULL); return INT;}
+{VOID} 			{(yylval.node) = new Node("VOID", yytext, NULL, NULL, NULL); return VOID;}
 {CHAR} 			{(yylval.node) = new Node("CHAR", yytext, NULL, NULL, NULL); return CHAR;}
 {STRING} 		{(yylval.node) = new Node("STRING", yytext, NULL, NULL, NULL); return STRING;}
 {TRUE} 			{(yylval.node) = new Node("TRUE", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_bool); return TRUE;}
@@ -85,12 +90,14 @@ NEW_LINE 						([\n])
 {BOOL} 			{(yylval.node) = new Node("BOOL", yytext, NULL, NULL, NULL); return BOOL;}
 {GET} 			{(yylval.node) = new Node("GET", yytext, NULL, NULL, NULL); return GET;}
 {PUT} 			{(yylval.node) = new Node("PUT", yytext, NULL, NULL, NULL); return PUT;}
+{PUTS} 			{(yylval.node) = new Node("PUTS", yytext, NULL, NULL, NULL); return PUTS;}
 {RETURN} 		{(yylval.node) = new Node("RETURN", yytext, NULL, NULL, NULL); return RETURN;}
 {IN} 			{(yylval.node) = new Node("IN", yytext, NULL, NULL, NULL); return IN;}
 {OR} 			{(yylval.node) = new Node("OR", yytext, NULL, NULL, NULL); return OR;}
 {AND} 			{(yylval.node) = new Node("AND", yytext, NULL, NULL, NULL); return AND;}
 {IF} 			{(yylval.node) = new Node("IF", yytext, NULL, NULL, NULL); return IF;}
 {FOR} 			{(yylval.node) = new Node("FOR", yytext, NULL, NULL, NULL); return FOR;}
+{FOREACH}		{(yylval.node) = new Node("FOREACH", yytext, NULL, NULL, NULL); return FOREACH;}
 {WHILE} 		{(yylval.node) = new Node("WHILE", yytext, NULL, NULL, NULL); return WHILE;}
 {ELSE} 			{(yylval.node) = new Node("ELSE", yytext, NULL, NULL, NULL); return ELSE;}
 {BREAK} 		{(yylval.node) = new Node("BREAK", yytext, NULL, NULL, NULL); return BREAK;}
@@ -103,6 +110,7 @@ NEW_LINE 						([\n])
 
 {INTEGERS}		{(yylval.node) = new Node("INTEGERS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_int); return INTEGERS;}
 {CHARACTERS}		{(yylval.node) = new Node("CHARACTERS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_char); return CHARACTERS;}
+{LIBRARY}			{(yylval.node) = new Node("LIBRARY", yytext, NULL, NULL, NULL); return LIBRARY;}
 {STRING_LITERALS}		{(yylval.node) = new Node("STRING_LITERALS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_string); return STRING_LITERALS;}
 {FLOATING_POINTS}		{(yylval.node) = new Node("FLOATING_POINTS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_float); return FLOATING_POINTS;}
 {IDENTIFIER}			{(yylval.node) = new Node("IDENTIFIER", yytext, NULL, NULL, NULL); return IDENTIFIER;}
