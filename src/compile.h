@@ -8,6 +8,8 @@ extern int yylineno;
 enum DataType{
 	dt_none,
 	dt_int,
+	dt_char,
+	dt_string,
 	dt_float,
 	dt_bool,
 	dt_func,
@@ -137,9 +139,9 @@ private:
 	int scope;	// current maximum scope
 				// 0 => Global scope
 
-	vector < map < string, SymbolTableAux > > symbols;	// vector of maps at different scopes. vector[i] => map of symbols at scope i
+	vector < map < string, SymbolTableAux > > symbols, backup_symbols;	// vector of maps at different scopes. vector[i] => map of symbols at scope i
 
-	string TYPE2STRING[6] = {"none", "int", "float", "bool", "func", "err"};
+	string TYPE2STRING[8] = {"none", "int", "char", "string", "float", "bool", "func", "err"};
 
 
 public:
@@ -249,11 +251,35 @@ public:
 	string gen_mips(string id){
 		// return name.datatype.scope
 		for (int i = scope; i >= 0; i--) {
-			if(symbols[i].find(id) !=  symbols[scope].end()){
+			if(symbols[i].find(id) !=  symbols[i].end()){
 				return id + "." +  TYPE2STRING[symbols[i].find(id)->second.getDataType()] + "." + to_string(i);
 			}
 		}
 		return "";
+	}
+
+	vector<string> backup()
+	{
+		vector<string> back_var;
+		backup_symbols = symbols;
+
+		// backup symbol names for scope >= 1
+		for(int i = 1; i <= scope; i++)
+			for(map<string,SymbolTableAux>::iterator it = symbols[i].begin(); it != symbols[i].end(); ++it)
+				back_var.push_back(gen_mips(it->first));
+
+		// pop the symbols of scope >0 from the symbol table
+		for(int i = scope ; i > 0; i--)
+			symbols.pop_back();
+
+		scope = 0;
+		return back_var;
+	}
+
+	void restore(vector<string> back_var)
+	{
+		symbols = backup_symbols;
+		scope = symbols.size() - 1;
 	}
 
 	// ~SymbolTable();
@@ -338,24 +364,25 @@ public:
 				node->setDataType(dt_err);
 			}else {
 				node->setDataType(symtab.getDataType(node->child1->getValue()));
-
 			}
 
 		} else if (node_type == "function_declaration" ){
 			if(!symtab.find(node->getValue())){ 	// declare the function if not already declared
-				symtab.addScope();
-				// analyse the subtree
 				vector <Parameter> params = expandParameterList(node->child2);
+
+				// set the active function pointer
+				active_fun_ptr = symtab.addFunction(node->getValue(), node->child1->getDataType(), params);
+
+				// add a scope
+				symtab.addScope();
 				for (std::vector<Parameter>::iterator i = params.begin(); i != params.end(); ++i)
 				{
 					symtab.addVariableInCurrentScope(i->getValue(), i->getDataType());
 				}
-				// set the active function pointer
-				active_fun_ptr = symtab.addFunction(node->getValue(), node->child1->getDataType(), params);
-				// add a scope
 				analyse(node->child3);
 				//remove the scope
 				symtab.removeScope();
+
 			} else {	// check for function overloading
 
 						/*
@@ -396,6 +423,10 @@ public:
 					error_count++;
 					error_message << "Line Number " << node->line_number << " : 'continue' can only be used inside a loop." << endl;
 				}
+			} else if (node->getValue() == "scope"){
+				symtab.addScope();
+				analyse(node->child1);
+				symtab.removeScope();
 			} else {
 				analyse(node->child1);
 			}
@@ -448,6 +479,7 @@ public:
 				error_message<<"Line Number "<<node->line_number<<" : Return statement can only be used inside a function."<<endl;
 				node->setDataType(dt_err);
 			} else {
+				analyse(node->child2);
 				if (node->child2->getDataType() == active_fun_ptr->getReturnDataType()) {
 					active_fun_ptr = NULL;
 				} else if (node->child2 == NULL && active_fun_ptr->getReturnDataType() == dt_none){
@@ -578,7 +610,7 @@ public:
 				}
 			}
 
-		} else if (node_type == "operator1" || node_type == "operator2" || node_type == "operator3" || node_type == "unary_operator" || node_type == "constants" ){
+		} else if (node_type == "operator1" || node_type == "operator2" || node_type == "operator3" || node_type == "unary_operator" || node_type == "constants"){
 			// Analyse the children
 			return ;
 
@@ -686,20 +718,23 @@ private:
 	SymbolTable symtab, backup_symtab;	// backup symtab is used for pushing to stack during backup
 	stringstream mips_1, mips_2;
 	int label_counter;
+	int string_var_counter;
 	int temp_counter;
 
 	vector<string> breaks;
 	vector<string> continues;
 
-	vector<string> allVariables;
+	vector< pair<string, DataType> > allVariables;
+	vector< pair<string, string> > stringLiterals;
 
-	string TYPE2STRING[6] = {"none", "int", "float", "bool", "func", "err"};
+	string TYPE2STRING[8] = {"none", "int", "char", "string", "float", "bool", "func", "err"};
 
 public:
 	MIPSCode(){
 		mips_1 << ".text" << endl;
 		label_counter = 0;
 		temp_counter = 0;
+		string_var_counter = 0;
 
 		breaks.clear();
 		continues.clear();
@@ -710,8 +745,12 @@ public:
 		return "label_" + to_string(label_counter++);
 	}
 
-	string getNextTempVar(){
-		return "temp" + to_string(temp_counter++);
+	pair<string, DataType> getNextTempVar(){
+		return make_pair("temp" + to_string(temp_counter++), dt_int);
+	}
+
+	string getStringVar(){
+		return "_str" + to_string(string_var_counter++);
 	}
 
 	string putLabel(string label, int param_count){
@@ -725,25 +764,34 @@ public:
 		return label;
 	}
 
-	void loadInRegister(string var, string reg){
+	void loadInRegister(string var, string reg, DataType type){
 		// check if var is variable (load word) or number (load immediate)
 
 		if(var[0] <= '9' and var[0] >= '0')	// if number
-			mips_1 << "li\t$" << reg <<", " << var << endl;
-		else					// variable name
 		{
+			mips_1 << "li\t$" << reg <<", " << var << endl;
+
+		} else if (var[0] == '\'') {
+			mips_1 << "li\t$" << reg <<", " << var << endl;
+
+		} else if (var[0] == '"') {
+			string temp = getStringVar();
+			stringLiterals.push_back(make_pair(temp ,var));
+			mips_1 << "la\t$" << reg <<", " << temp << endl;
+
+		} else {					// variable name
 			var = "_" + var;
 			mips_1 << "lw\t$" << reg <<", " << var << endl;
-			if(std::find(allVariables.begin(), allVariables.end(), var) == allVariables.end())
-				allVariables.push_back(var);
+			if(std::find(allVariables.begin(), allVariables.end(), make_pair(var, type)) == allVariables.end())
+				allVariables.push_back(make_pair(var, type));
 		}
 	}
 
-	void storeInMemory(string var){
+	void storeInMemory(string var, DataType type){
 		var = "_"+var;
 		mips_1 << "sw\t$t0, " << var << endl;
-		if(std::find(allVariables.begin(), allVariables.end(), var) == allVariables.end())
-			allVariables.push_back(var);
+		if(std::find(allVariables.begin(), allVariables.end(), make_pair(var,type)) == allVariables.end())
+			allVariables.push_back(make_pair(var, type));
 	}
 
 	void ReturnFunc(){
@@ -784,6 +832,18 @@ public:
 		mips_1 << "sw\t$ra,0($sp)" << endl;
 	}
 
+	void pushCode(string loc){
+		mips_1 << "addi	$sp,$sp,-4" << endl;
+		mips_1 << "lw	$t8, " << loc << endl;
+		mips_1 << "sw	$t8,0($sp)" << endl;
+	}
+
+	void popCode(string loc){
+		mips_1 << "lw	$t8,0($sp)" << endl;
+		mips_1 << "sw	$t8, " << loc << endl;
+		mips_1 << "addi	$sp,$sp,4" << endl;
+	}
+
 	void copy(string src, string dst){
 		mips_1 << "lw\t$t8, " << src << endl;
 		mips_1 << "sw\t$t8, " << dst << endl;
@@ -814,6 +874,9 @@ public:
 		} else if(op == "/") {
 			mips_1 << "div\t$t1, $t2" << endl;
 			mips_1 << "mflo\t$t0" << endl;
+		} else if(op == "%") {
+			mips_1 << "div\t$t1, $t2" << endl;
+			mips_1 << "mfhi\t$t0" << endl;
 
 		} else if(op == ">=") {
 			mips_1 << "slt\t$t3, $t1, $t2" << endl;		// set t3 if t1 less than t2
@@ -841,12 +904,15 @@ public:
 		}
 	}
 
-	string generateCode(Node *tree){
-		if(tree == NULL)	return "";
+	pair<string, DataType> generateCode(Node *tree){
+		if(tree == NULL)	return make_pair("", dt_int);
 
 		string node_type = tree->getType();
 
 		DEBUG cerr << node_type << endl;
+
+		if (node_type == "") { return make_pair("", dt_int);}
+
 
 		if (node_type == "variable_declaration") {
 			if(tree->child3 == NULL){
@@ -856,23 +922,22 @@ public:
 					symtab.addVariableInCurrentScope(vars[i], tree->child1->getDataType());
 				}
 			} else {
-				cerr<<"HERE"<<endl;
 				// add to symtab
 				symtab.addVariableInCurrentScope(tree->child2->getValue(), tree->child1->getDataType());
-				string exp = generateCode(tree->child3);
+				pair<string, DataType> exp = generateCode(tree->child3);
 				// store the expression register to the memory
-				loadInRegister(exp, "t0");
-				storeInMemory(symtab.gen_mips(tree->child2->getValue()));
+				loadInRegister(exp.first, "t0", exp.second);
+				storeInMemory(symtab.gen_mips(tree->child2->getValue()), tree->child1->getDataType());
 			}
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "variable") {
 			// return name.type.scope
-			return symtab.gen_mips(tree->child1->getValue());
+			return make_pair(symtab.gen_mips(tree->child1->getValue()), tree->child1->getDataType());
 
 		} else if ( node_type == "function_declaration") {
 
-			vector<Parameter> params = expandParameterList(tree->child2->child1);
+			vector<Parameter> params = expandParameterList(tree->child2);
 
 			string label = putLabel(tree->getValue(), params.size());
 
@@ -884,46 +949,51 @@ public:
 				symtab.addVariableInCurrentScope(params[i].getValue(), params[i].getDataType());
 			}
 
-			string a = generateCode(tree->child3);
+			pair<string, DataType> a = generateCode(tree->child3);
 			symtab.removeScope();
 
 			ReturnFunc();
 
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "main_function") {
 			mips_1 << "main : "<<endl;
 			symtab.addScope();
-			string a = generateCode(tree->child1);
+			pair<string, DataType> a = generateCode(tree->child1);
 			symtab.removeScope();
 			ReturnFunc();
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "statement") {
 			if(tree->getValue() == "break"){
 				Jump(breaks.back());
 			} else if (tree->getValue() == "continue") {
 				Jump(continues.back());
+			} else if(tree->getValue() == "scope"){
+				symtab.addScope();
+				generateCode(tree->child1);
+				symtab.removeScope();
 			} else {
 				generateCode(tree->child1);
 			}
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "condition") {
 			string start = getNextLabel();
 			string end = getNextLabel();
 
-			string a = generateCode(tree->child1);	// expression
+			pair<string, DataType> a = generateCode(tree->child1);	// expression
 			// load the expression's value in t1
-			loadInRegister(a, "t1");
+			loadInRegister(a.first, "t1", a.second);
 			// branch to start if $t1>0
 			condition("t1", start);
 			// otherwise go to end
 			Jump(end);
 			// now add the if code (i.e. the start label)
 			putLabel(start);
+
 			symtab.addScope();
-			string b = generateCode(tree->child2);
+			pair<string, DataType> b = generateCode(tree->child2);
 			symtab.removeScope();
 			putLabel(end);
 
@@ -931,10 +1001,10 @@ public:
 			if(tree->child3 != NULL)
 			{
 				symtab.addScope();
-				string c = generateCode(tree->child3);
+				pair<string, DataType> c = generateCode(tree->child3);
 				symtab.removeScope();
 			}
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "for_loop") {
 			string start = getNextLabel();		// start of the loop
@@ -942,54 +1012,55 @@ public:
 			string con = getNextLabel();		// jump to this label on continue/condition reevaluate
 			string end = getNextLabel();		// end
 
-			string a = generateCode(tree->child1);		// variable
-			string b = generateCode(tree->child2);		// expression
+			pair<string, DataType> a = generateCode(tree->child1);		// variable
+			pair<string, DataType> b = generateCode(tree->child2);		// expression
 
 
 			breaks.push_back(end);		// Label to jump to on break
 			continues.push_back(con); 	// Label to jump to on continue
 
 			// start variables value from 0
-			loadInRegister("0", "t1");
-			loadInRegister("0", "t2");
-			operate("+");	// add t1 & t2 and store to t0
-			storeInMemory(a);	//store a to temp
+			// loadInRegister("0", "t1", dt_int);
+			// loadInRegister("0", "t2", dt_int);
+			// operate("+");	// add t1 & t2 and store to t0
+			loadInRegister("0", "t0", dt_int);
+			storeInMemory(a.first, a.second);	//store a to temp
 
 			// start of the loop
 			putLabel(start);
 
 			// check the condition - variable is less than the simple_expression value
 			// set t0 = 1 if a < b
-			string temp = getNextTempVar();
-			loadInRegister(a, "t1");
-			loadInRegister(b, "t2");
+			pair<string, DataType> temp = getNextTempVar();
+			loadInRegister(a.first, "t1", a.second);
+			loadInRegister(b.first, "t2", b.second);
 			operate("<");
-			storeInMemory(temp);	// store t0 to temp
+			storeInMemory(temp.first, temp.second);	// store t0 to temp
 
 			// if variable in expression, then jump to the code
-			loadInRegister(temp, "t1");
+			loadInRegister(temp.first, "t1", temp.second);
 			condition("t1", middle);
 			// otherwise jump to end
 			Jump(end);
 
 			putLabel(middle);
 			symtab.addScope();
-			string c = generateCode(tree->child3);
+			pair<string, DataType> c = generateCode(tree->child3);
 			symtab.removeScope();
 
 			putLabel(con);
 
-			loadInRegister(a, "t1");
-			loadInRegister("1", "t2");
+			loadInRegister(a.first, "t1", a.second);
+			loadInRegister("1", "t2", dt_int);
 			operate("+");	// add t1 & t2 and store to t0
-			storeInMemory(a);	//store a to temp
+			storeInMemory(a.first, a.second);	//store a to temp
 
 			Jump(start);
 			putLabel(end);
 
 			breaks.pop_back();
 			continues.pop_back();
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "while_loop") {
 			string start = getNextLabel();	// start of the loop
@@ -1000,15 +1071,15 @@ public:
 			continues.push_back(start);
 
 			putLabel(start);
-			string a = generateCode(tree->child1);
+			pair<string, DataType> a = generateCode(tree->child1);
 
-			loadInRegister(a, "t1");
+			loadInRegister(a.first, "t1", a.second);
 			condition("t1", middle);
 			Jump(end);
 			putLabel(middle);
 
 			symtab.addScope();
-			string b = generateCode(tree->child2);
+			pair<string, DataType> b = generateCode(tree->child2);
 			symtab.removeScope();
 
 			Jump(start);
@@ -1017,62 +1088,64 @@ public:
 			breaks.pop_back();
 			continues.pop_back();
 
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "return_statement") {
 			if(tree->child2 == NULL)
 			{
-				string a = generateCode(tree->child2);
+				pair<string, DataType> a = generateCode(tree->child2);
 
-				loadInRegister(a, "t1");
+				loadInRegister(a.first, "t1", a.second);
 				functionReturnValue("t1");
 			}
 			ReturnFunc();
 
-			return "";
+			return make_pair("", dt_int);
 
 		} else if ( node_type == "read") {
-			string a = generateCode(tree->child1);
-			loadInRegister(a, "t1");
+			pair<string, DataType> a = generateCode(tree->child1);
+			loadInRegister(a.first, "t1", a.second);
 			readCode("t1");
 			return a;
 
 		} else if ( node_type == "write") {
-			string a = generateCode(tree->child1);
-			loadInRegister(a, "t1");
+			pair<string, DataType> a = generateCode(tree->child1);
+			loadInRegister(a.first, "t1", a.second);
 			writeCode("t1");
 			return a;
 
 		} else if ( node_type == "expression") {
-			string b;
+			pair<string, DataType> b;
 			if(tree->getValue() == "=") {
-				string a = generateCode(tree->child2);
+				pair<string, DataType> a = generateCode(tree->child2);
 				b = generateCode(tree->child1);
-				loadInRegister(a, "t1");
-				loadInRegister("0", "t2");
-				operate("+");
-				storeInMemory(b);
+				// loadInRegister(a.first, "t1", a.second);
+				// loadInRegister("0", "t2", dt_int);
+				// operate("+");
+				loadInRegister(a.first, "t0", a.second);
+				storeInMemory(b.first, b.second);
 			} else {
 				b = generateCode(tree->child1);
 			}
-			string ret = getNextTempVar();
+			pair<string, DataType> ret = getNextTempVar();
 
-			loadInRegister(b, "t1");
-			loadInRegister("0", "t2");
-			operate("+");
-			storeInMemory(ret);
+			// loadInRegister(b.first, "t1", b.second);
+			// loadInRegister("0", "t2", dt_int);
+			// operate("+");
+			loadInRegister(b.first, "t0", b.second);
+			storeInMemory(ret.first, ret.second);
 			return ret;
 
 		} else if ( node_type == "logical_expression") {
 			if(tree->getValue() == "or") {
-				string a = generateCode(tree->child2);
-				string b = generateCode(tree->child1);
-				string ret = getNextTempVar();
+				pair<string, DataType> a = generateCode(tree->child2);
+				pair<string, DataType> b = generateCode(tree->child1);
+				pair<string, DataType> ret = getNextTempVar();
 
-				loadInRegister(b, "t1");
-				loadInRegister(a, "t2");
+				loadInRegister(b.first, "t1", b.second);
+				loadInRegister(a.first, "t2", a.second);
 				operate("||");
-				storeInMemory(ret);
+				storeInMemory(ret.first, ret.second);
 				return ret;
 
 			} else {
@@ -1081,14 +1154,14 @@ public:
 
 		} else if ( node_type == "and_expression") {
 			if(tree->getValue() == "and") {
-				string a = generateCode(tree->child2);
-				string b = generateCode(tree->child1);
-				string ret = getNextTempVar();
+				pair<string, DataType> a = generateCode(tree->child2);
+				pair<string, DataType> b = generateCode(tree->child1);
+				pair<string, DataType> ret = getNextTempVar();
 
-				loadInRegister(b, "t1");
-				loadInRegister(a, "t2");
+				loadInRegister(b.first, "t1", b.second);
+				loadInRegister(a.first, "t2", a.second);
 				operate("&&");
-				storeInMemory(ret);
+				storeInMemory(ret.first, ret.second);
 				return ret;
 
 			} else {
@@ -1098,15 +1171,15 @@ public:
 		} else if ( node_type == "relational_expression") {
 			if(tree->getValue() == "op")
 			{
-				string a = generateCode(tree->child3);
-				string b = generateCode(tree->child1);
-				string c = generateCode(tree->child2);
-				string ret = getNextTempVar();
+				pair<string, DataType> a = generateCode(tree->child3);
+				pair<string, DataType> b = generateCode(tree->child1);
+				pair<string, DataType> c = generateCode(tree->child2);
+				pair<string, DataType> ret = getNextTempVar();
 
-				loadInRegister(b, "t1");
-				loadInRegister(a, "t2");
-				operate(c);
-				storeInMemory(ret);
+				loadInRegister(b.first, "t1", b.second);
+				loadInRegister(a.first, "t2", a.second);
+				operate(c.first);
+				storeInMemory(ret.first, ret.second);
 				return ret;
 			} else {
 				return generateCode(tree->child1);
@@ -1115,15 +1188,15 @@ public:
 		} else if ( node_type == "simple_expression") {
 			if(tree->getValue() == "op")
 			{
-				string a = generateCode(tree->child3);
-				string b = generateCode(tree->child1);
-				string c = generateCode(tree->child2);
-				string ret = getNextTempVar();
+				pair<string, DataType> a = generateCode(tree->child3);
+				pair<string, DataType> b = generateCode(tree->child1);
+				pair<string, DataType> c = generateCode(tree->child2);
+				pair<string, DataType> ret = getNextTempVar();
 
-				loadInRegister(b, "t1");
-				loadInRegister(a, "t2");
-				operate(c);
-				storeInMemory(ret);
+				loadInRegister(b.first, "t1", b.second);
+				loadInRegister(a.first, "t2", a.second);
+				operate(c.first);
+				storeInMemory(ret.first, ret.second);
 				return ret;
 			} else {
 				return generateCode(tree->child1);
@@ -1132,15 +1205,15 @@ public:
 		} else if ( node_type == "divmul_expression") {
 			if(tree->getValue() == "op")
 			{
-				string a = generateCode(tree->child3);
-				string b = generateCode(tree->child1);
-				string c = generateCode(tree->child2);
-				string ret = getNextTempVar();
+				pair<string, DataType> a = generateCode(tree->child3);
+				pair<string, DataType> b = generateCode(tree->child1);
+				pair<string, DataType> c = generateCode(tree->child2);
+				pair<string, DataType> ret = getNextTempVar();
 
-				loadInRegister(b, "t1");
-				loadInRegister(a, "t2");
-				operate(c);
-				storeInMemory(ret);
+				loadInRegister(b.first, "t1", b.second);
+				loadInRegister(a.first, "t2", a.second);
+				operate(c.first);
+				storeInMemory(ret.first, ret.second);
 				return ret;
 			} else {
 				return generateCode(tree->child1);
@@ -1148,15 +1221,15 @@ public:
 
 		} else if ( node_type == "unary_expression") {
 			if(tree->getValue() == "op") {
-				string a = generateCode(tree->child2);
-				string b = generateCode(tree->child1);
-				string ret = getNextTempVar();
+				pair<string, DataType> a = generateCode(tree->child2);
+				pair<string, DataType> b = generateCode(tree->child1);
+				pair<string, DataType> ret = getNextTempVar();
 
-				loadInRegister("0", "t1");
-				loadInRegister(a, "t2");
-				operate(b);
-				storeInMemory(ret);
-				return ret;
+				loadInRegister("0", "t1", dt_int);
+				loadInRegister(a.first, "t2", a.second);
+				operate(b.first);
+				storeInMemory(ret.first, ret.second);
+				return make_pair(ret.first, ret.second);
 			} else {
 				return generateCode(tree->child1);
 			}
@@ -1165,7 +1238,7 @@ public:
 			return generateCode(tree->child1);
 
 		} else if ( node_type == "constants") {
-			return tree->getValue();
+			return make_pair(tree->getValue(), tree->getDataType());;
 
 		} else if ( node_type == "function_call") {
 			//evaluate arguments
@@ -1178,11 +1251,11 @@ public:
 			pushReturnCode();
 
 			// push the current register values to stack
-			// vector<string> backvars = mipstable.backup();
-			// for(int i=0;i<backvars.size();i++)
-			// {
-			// 	genmips(def,"push",backvars[i]);
-			// }
+			vector<string> backvars = symtab.backup();
+			for(int i=0;i<backvars.size();i++)
+			{
+				pushCode(backvars[i]);
+			}
 
 			//set arguments
 
@@ -1197,39 +1270,59 @@ public:
 
 			//restore variables
 			// pop back the stored register values from stack
-			// for(int i = backvars.size()-1;i>=0;i--)
-			// {
-			// 	genmips(def,"pop",backvars[i]);
-			// }
+			for(int i = backvars.size()-1;i>=0;i--)
+			{
+				popCode(backvars[i]);
+			}
 			// pop back the return address from stack
-			// mipstable.restore(backvars);
+			symtab.restore(backvars);
 
 			popReturnCode();
 
-			string ret = getNextTempVar();
+			pair<string, DataType> ret = getNextTempVar();
 
 			// restore the return value
-			restoreReturn(ret);
+			restoreReturn(ret.first);
 
 			return ret;
 
 		} else if ( node_type == "unary_operator" || node_type == "operator3" || node_type == "operator2" || node_type == "operator1") {
-			return tree->getValue();
+			return make_pair(tree->getValue(), tree->getDataType());
 
 		} else {
 			generateCode(tree->child1);
 			generateCode(tree->child2);
 			generateCode(tree->child3);
-			return "";
+			return make_pair("", dt_int);
 		}
 	}
 
 	void generateDataSection(){
-		return ;
+		mips_2 << ".data" << endl;
+		for(vector<pair< string, string> >::iterator i = stringLiterals.begin(); i != stringLiterals.end(); i++)
+		{
+			mips_2 << i->first << ":\t\t.asciiz " << i->second << endl;
+		}
+
+		for( vector < pair < string , DataType > > :: iterator i = allVariables.begin(); i != allVariables.end(); i++){
+			if(i->second == dt_none || i->second == dt_int || i->second == dt_bool){
+				mips_2 << i->first << ":\t\t.word 0" << endl;
+			} else if(i->second == dt_float){
+				mips_2 << i->first << ":\t\t.float 0.0" << endl;
+			} else if (i->second == dt_string){
+				mips_2 << i->first << ":\t\t.space 20" << endl;
+			}
+		}
+		mips_2 << mips_1.str();
+		return;
 	}
 
 	void generateOutput(){
-		cout<<mips_1.str()<<endl;
+		fstream MIPSFile;
+		MIPSFile.open("mips.s", fstream::out);
+		MIPSFile << mips_2.str() ;
+		MIPSFile.close();
+		return ;
 	}
 
 	vector<string> expandVariablesList(Node *tree){

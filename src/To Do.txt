@@ -1,4 +1,8 @@
-Function Call MIPS
+#####Function Call MIPS
 Traditional For loop for C
-Scope statements -> {}
+
 Arrays
+array_declr  	: 	type variable LB_SQUARE term RB_SQUARE SEMI
+					{$$ = new Node("declaration", "", $1, NULL, NULL);}
+
+get string

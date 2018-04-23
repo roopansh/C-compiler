@@ -6,6 +6,8 @@
 
 	using namespace std;
 
+	extern bool syntax_success;
+
 %}
 
 %option yylineno
@@ -17,6 +19,7 @@ ADD		"+"
 SUB		"-"
 MUL		"*"
 DIV		"/"
+MOD		"%"
 GT		">"
 LT		"<"
 GE		">="
@@ -32,6 +35,8 @@ RB_ROUND					")"
 COMMA 	","
 MAIN	"main"
 INT		"int"
+CHAR	"char"
+STRING	"string"
 TRUE 	"true"
 FALSE	"false"
 FLOAT 	"float"
@@ -47,11 +52,13 @@ ELSE	"else"
 BREAK   "break"
 CONTINUE 	"continue"
 
+CHARACTERS 						('.')
+STRING_LITERALS					(\".*\")
 INTEGERS 						([0-9]+)
 FLOATING_POINTS					([0-9]+\.[0-9]+)
-IDENTIFIER		([A-Za-z_]([A-Za-z0-9_])*)
-WHITE_SPACES 	([ \t]+)
-NEW_LINE 		([\n])
+IDENTIFIER						([A-Za-z_]([A-Za-z0-9_])*)
+WHITE_SPACES 					([ \t]+)
+NEW_LINE 						([\n])
 
 %%
 
@@ -61,6 +68,7 @@ NEW_LINE 		([\n])
 {SUB} 			{(yylval.node) = new Node("SUB", yytext, NULL, NULL, NULL); return SUB;}
 {MUL} 			{(yylval.node) = new Node("MUL", yytext, NULL, NULL, NULL); return MUL;}
 {DIV} 			{(yylval.node) = new Node("DIV", yytext, NULL, NULL, NULL); return DIV;}
+{MOD} 			{(yylval.node) = new Node("MOD", yytext, NULL, NULL, NULL); return MOD;}
 {GT} 			{(yylval.node) = new Node("GT", yytext, NULL, NULL, NULL); return GT;}
 {LT} 			{(yylval.node) = new Node("LT", yytext, NULL, NULL, NULL); return LT;}
 {GE} 			{(yylval.node) = new Node("GE", yytext, NULL, NULL, NULL); return GE;}
@@ -69,6 +77,8 @@ NEW_LINE 		([\n])
 {NE} 			{(yylval.node) = new Node("NE", yytext, NULL, NULL, NULL); return NE;}
 {MAIN} 			{(yylval.node) = new Node("MAIN", yytext, NULL, NULL, NULL); return MAIN;}
 {INT} 			{(yylval.node) = new Node("INT", yytext, NULL, NULL, NULL); return INT;}
+{CHAR} 			{(yylval.node) = new Node("CHAR", yytext, NULL, NULL, NULL); return CHAR;}
+{STRING} 		{(yylval.node) = new Node("STRING", yytext, NULL, NULL, NULL); return STRING;}
 {TRUE} 			{(yylval.node) = new Node("TRUE", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_bool); return TRUE;}
 {FALSE} 		{(yylval.node) = new Node("FALSE", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_bool); return FALSE;}
 {FLOAT} 		{(yylval.node) = new Node("FLOAT", yytext, NULL, NULL, NULL); return FLOAT;}
@@ -92,12 +102,14 @@ NEW_LINE 		([\n])
 {COMMA}			{(yylval.node) = new Node("COMMA", yytext, NULL, NULL, NULL); return COMMA;}
 
 {INTEGERS}		{(yylval.node) = new Node("INTEGERS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_int); return INTEGERS;}
+{CHARACTERS}		{(yylval.node) = new Node("CHARACTERS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_char); return CHARACTERS;}
+{STRING_LITERALS}		{(yylval.node) = new Node("STRING_LITERALS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_string); return STRING_LITERALS;}
 {FLOATING_POINTS}		{(yylval.node) = new Node("FLOATING_POINTS", yytext, NULL, NULL, NULL); yylval.node->setDataType(dt_float); return FLOATING_POINTS;}
 {IDENTIFIER}			{(yylval.node) = new Node("IDENTIFIER", yytext, NULL, NULL, NULL); return IDENTIFIER;}
 
 {NEW_LINE} 			{}
 {WHITE_SPACES}		{}
 
-.					{cerr<< "TOKEN CANNOT BE MATCHED : ' "<< yytext <<" '"<<endl;}
+.					{cerr<< "TOKEN CANNOT BE MATCHED :\t"<< yytext <<"\t"<<endl; syntax_success = false;}
 
 %%

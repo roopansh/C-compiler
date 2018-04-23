@@ -18,7 +18,7 @@
 	Node *node;
 }
 
-%token<node> ADD SUB MUL DIV GT LT GE LE EQ NE MAIN INT TRUE FALSE FLOAT BOOL GET PUT RETURN IN OR AND IF FOR WHILE ELSE BREAK CONTINUE INTEGERS FLOATING_POINTS IDENTIFIER SEMI LB_CURLY RB_CURLY LB_ROUND RB_ROUND COMMA EQUAL
+%token<node> ADD SUB MUL DIV GT LT GE LE EQ NE MAIN INT TRUE FALSE FLOAT BOOL GET PUT RETURN IN OR AND IF FOR WHILE ELSE BREAK CONTINUE INTEGERS FLOATING_POINTS IDENTIFIER SEMI LB_CURLY RB_CURLY LB_ROUND RB_ROUND COMMA EQUAL CHAR CHARACTERS MOD STRING STRING_LITERALS
 
 %type<node> program declr_list declr variable_declr variable_list variable type func_declr parameters param_list parameter main_function statements statement condition loop for_loop while_loop return_statement read write expression logical_expression and_expression relational_expression simple_expression divmul_expression unary_expression term function_call args args_list constants operator3 operator1 operator2 unary_operator
 
@@ -69,6 +69,10 @@ type	:	INT
 			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_float);}
 		| BOOL
 			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_bool);}
+		| CHAR
+			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_char);}
+		| STRING
+			{$$ = new Node("type",$1->getValue(), $1, NULL, NULL); $$->setDataType(dt_string);}
 		;
 
 func_declr 	: 	type IDENTIFIER LB_ROUND parameters RB_ROUND LB_CURLY statements RB_CURLY
@@ -122,6 +126,8 @@ statement 	:	variable_declr
 				{$$ = new Node("statement", "", $1, NULL, NULL);}
 			|	write SEMI
 				{$$ = new Node("statement", "", $1, NULL, NULL);}
+			|	LB_CURLY statements RB_CURLY
+				{$$ = new Node("statement", "scope", $2, NULL, NULL);}
 			| 	error SEMI
 				{yyerrok;}
 			;
@@ -231,6 +237,10 @@ args_list	:	args_list COMMA expression
 
 constants 	:	INTEGERS
 				{$$ = new Node("constants", $1->getValue(), $1, NULL, NULL); $$->setDataType($1->getDataType());}
+			| 	CHARACTERS
+				{$$ = new Node("constants", $1->getValue(), $1, NULL, NULL); $$->setDataType($1->getDataType());}
+			| 	STRING_LITERALS
+				{$$ = new Node("constants", $1->getValue(), $1, NULL, NULL); $$->setDataType($1->getDataType());}
 			| 	FLOATING_POINTS
 				{$$ = new Node("constants", $1->getValue(), $1, NULL, NULL); $$->setDataType($1->getDataType());}
 			| 	TRUE
@@ -249,6 +259,8 @@ operator2 	: 	MUL
 				{$$ = new Node("operator2", "*", $1, NULL, NULL);}
 			| 	DIV
 				{$$ = new Node("operator2", "/", $1, NULL, NULL);}
+			| 	MOD
+				{$$ = new Node("operator2", "%", $1, NULL, NULL);}
 			;
 
 operator3 	: 	GT
@@ -288,6 +300,7 @@ int main(){
 	if(syntax_success){
 		cout<<"No Syntax Errors!"<<endl;
 	} else {
+		cout<<"There were Syntax Errors!"<<endl;
 		exit(1);
 	}
 	cout<<"__________________________________"<<endl<<endl;
