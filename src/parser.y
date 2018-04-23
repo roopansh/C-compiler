@@ -310,6 +310,62 @@ void yyerror(string s){
 	syntax_success = false;
 }
 
+vector<bool> tree_line;
+fstream tree_file;
+
+void printTree(Node *tree, string term) {
+	if(tree == NULL){
+		return;
+	}
+
+	for(int j = 1; j <= 2 ; j++){
+		for (int i = 0; i < (int)(tree_line.size() - 1); i++) {
+			if(tree_line.at(i)){
+				tree_file << "|\t\t";
+			} else {
+				tree_file << "\t\t";
+			}
+		}
+		if(j == 1){
+			tree_file<<"|"<<endl;
+		}
+	}
+
+	if(!tree_line.empty()){
+		tree_file << term;
+	}
+	tree_file << tree->getType();
+	if(tree->getValue() != "") {
+		tree_file << "[" << tree->getValue() << "]";
+	}
+
+	tree_file << endl;
+
+	if(tree->child4 != NULL){
+		tree_line.push_back(true);
+		printTree(tree->child4, term);
+		tree_line.pop_back();
+	}
+
+	if(tree->child3 != NULL){
+		tree_line.push_back(true);
+		printTree(tree->child3, term);
+		tree_line.pop_back();
+	}
+
+	if(tree->child2 != NULL){
+		tree_line.push_back(true);
+		printTree(tree->child2, term);
+		tree_line.pop_back();
+	}
+
+	if(tree->child1 != NULL){
+		tree_line.push_back(false);
+		printTree(tree->child1, term);
+		tree_line.pop_back();
+	}
+}
+
 int main(){
 	// Parse the input and build the syntax tree
 	cout<<"PARSING"<<endl;
@@ -335,8 +391,14 @@ int main(){
 	mips_code.generateDataSection();
 	mips_code.generateOutput();
 
+
+	// Print Tree
 	cout<<"Compilation Successfull!"<<endl;
 	cout<<"__________________________________"<<endl<<endl;
 
+	tree_line.clear();
+	tree_file.open("tree.txt", fstream::out);
+	printTree(ParseTreeRoot, "\\___");
+	tree_file.close();
 }
 

@@ -728,7 +728,7 @@ class MIPSCode
 {
 private:
 	SymbolTable symtab, backup_symtab;	// backup symtab is used for pushing to stack during backup
-	stringstream mips_1, mips_2;
+	stringstream mips_1, mips_2, intermediate_code;
 	int label_counter;
 	int string_var_counter;
 	int temp_counter;
@@ -943,11 +943,13 @@ public:
 				for(int i=0; i < vars.size(); i++)
 				{
 					symtab.addVariableInCurrentScope(vars[i], tree->child1->getDataType());
+					intermediate_code << TYPE2STRING[tree->child1->getDataType()] << " " << vars[i] <<endl;
 				}
 			} else {
 				// add to symtab
 				symtab.addVariableInCurrentScope(tree->child2->getValue(), tree->child1->getDataType());
 				pair<string, DataType> exp = generateCode(tree->child3);
+				intermediate_code << TYPE2STRING[tree->child1->getDataType()] << " " << tree->child2->getValue() << " = " << exp.first << endl;
 				// store the expression register to the memory
 				loadInRegister(exp.first, "t0", exp.second);
 				storeInMemory(symtab.gen_mips(tree->child2->getValue()), tree->child1->getDataType());
@@ -963,6 +965,7 @@ public:
 			vector<Parameter> params = expandParameterList(tree->child2);
 
 			string label = putLabel(tree->getValue(), params.size());
+			intermediate_code << tree->getValue() << " : " <<endl;
 
 			symtab.addFunction(label, dt_int, params);
 			symtab.addScope();
@@ -970,32 +973,41 @@ public:
 			for(int i=0;i<params.size();i++)
 			{
 				symtab.addVariableInCurrentScope(params[i].getValue(), params[i].getDataType());
+				intermediate_code << "param " << TYPE2STRING[params[i].getDataType()] << " " << params[i].getValue() <<endl;
 			}
 
 			pair<string, DataType> a = generateCode(tree->child3);
 			symtab.removeScope();
 
 			ReturnFunc();
+			intermediate_code << "return" << endl;
 
 			return make_pair("", dt_int);
 
 		} else if ( node_type == "main_function") {
 			mips_1 << "main : "<<endl;
+			intermediate_code << "main : "<<endl;
+
 			symtab.addScope();
 			pair<string, DataType> a = generateCode(tree->child1);
 			symtab.removeScope();
 			ReturnFunc();
+			intermediate_code << "return" << endl;
 			return make_pair("", dt_int);
 
 		} else if ( node_type == "statement") {
 			if(tree->getValue() == "break"){
 				Jump(breaks.back());
+				intermediate_code << "break" <<endl;
 			} else if (tree->getValue() == "continue") {
 				Jump(continues.back());
+				intermediate_code << "continue" <<endl;
 			} else if(tree->getValue() == "scope"){
 				symtab.addScope();
+				intermediate_code << "{" <<endl;
 				generateCode(tree->child1);
 				symtab.removeScope();
+				intermediate_code << "}" <<endl;
 			} else {
 				generateCode(tree->child1);
 			}
@@ -1009,17 +1021,20 @@ public:
 
 			// load the expression's value in t1
 			loadInRegister(a.first, "t1", a.second);
+			intermediate_code << "if ( " << a.first <<" > 0 ) jump " << start <<endl;
 			// branch to start if $t1>0
 			condition("t1", start);
 			// otherwise go to end
+			intermediate_code << "jump " << end <<endl;
 			Jump(end);
 			// now add the if code (i.e. the start label)
 			putLabel(start);
-
+			intermediate_code << start << " : "<<endl;
 			symtab.addScope();
 			pair<string, DataType> b = generateCode(tree->child2);
 			symtab.removeScope();
 			putLabel(end);
+			intermediate_code << end << " : "<<endl;
 
 			// if else part
 			if(tree->child3 != NULL)
@@ -1043,6 +1058,7 @@ public:
 			generateCode(tree->child1);
 
 			putLabel(start);
+			intermediate_code << start << " : " <<endl;
 
 			// code for condition
 			pair<string, DataType> a = generateCode(tree->child2);
@@ -1050,19 +1066,26 @@ public:
 
 			// if condition true, jump to code statements
 			condition("t0", middle);
+			intermediate_code << "if ( " << a.first << " > 0 ) jump "<< middle <<endl;
+
 			// else jump to exit
 			Jump(end);
-
+			intermediate_code << "jump " << end <<endl;
 			// code statements
 			putLabel(middle);
+			intermediate_code << middle <<" : " <<endl;
+
 			generateCode(tree->child4);
 
 			putLabel(cond);
+			intermediate_code << cond <<" : " <<endl;
 			generateCode(tree->child3);
 
 			// code for jump to start
 			Jump(start);
+			intermediate_code << "jump " << start <<endl;
 			putLabel(end);
+			intermediate_code << end <<" : " <<endl;
 
 			breaks.pop_back();
 			continues.pop_back();
@@ -1081,15 +1104,12 @@ public:
 			breaks.push_back(end);		// Label to jump to on break
 			continues.push_back(con); 	// Label to jump to on continue
 
-			// start variables value from 0
-			// loadInRegister("0", "t1", dt_int);
-			// loadInRegister("0", "t2", dt_int);
-			// operate("+");	// add t1 & t2 and store to t0
 			loadInRegister("0", "t0", dt_int);
 			storeInMemory(a.first, a.second);	//store a to temp
-
+			intermediate_code << a.first << " = 0"<<endl;
 			// start of the loop
 			putLabel(start);
+			intermediate_code<< start << " : " <<endl;
 
 			// check the condition - variable is less than the simple_expression value
 			// set t0 = 1 if a < b
@@ -1098,27 +1118,36 @@ public:
 			loadInRegister(b.first, "t2", b.second);
 			operate("<");
 			storeInMemory(temp.first, temp.second);	// store t0 to temp
+			intermediate_code << temp.first << " = ( " << a.first << " < " << b.first << " )"<<endl;
 
 			// if variable in expression, then jump to the code
 			loadInRegister(temp.first, "t1", temp.second);
 			condition("t1", middle);
+			intermediate_code << "if ( "<< temp.first << " > 0 ) jump " << middle <<endl;
+
 			// otherwise jump to end
 			Jump(end);
 
 			putLabel(middle);
+			intermediate_code<< middle << " : " <<endl;
+
 			symtab.addScope();
 			pair<string, DataType> c = generateCode(tree->child3);
 			symtab.removeScope();
 
 			putLabel(con);
+			intermediate_code<< con << " : " <<endl;
 
 			loadInRegister(a.first, "t1", a.second);
 			loadInRegister("1", "t2", dt_int);
 			operate("+");	// add t1 & t2 and store to t0
 			storeInMemory(a.first, a.second);	//store a to temp
+			intermediate_code << a.first << " = " << a.first << " + 1"<<endl;
 
 			Jump(start);
+			intermediate_code << "jump "<< start <<endl;
 			putLabel(end);
+			intermediate_code<< end << " : " <<endl;
 
 			breaks.pop_back();
 			continues.pop_back();
@@ -1378,10 +1407,13 @@ public:
 	}
 
 	void generateOutput(){
-		fstream MIPSFile;
+		fstream InterFile, MIPSFile;
 		MIPSFile.open("mips.s", fstream::out);
 		MIPSFile << mips_2.str() ;
 		MIPSFile.close();
+		InterFile.open("intermediate.txt", fstream::out);
+		InterFile << intermediate_code.str() ;
+		InterFile.close();
 		return ;
 	}
 
