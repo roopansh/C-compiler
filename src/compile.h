@@ -1,9 +1,10 @@
 #include <bits/stdc++.h>
+
 #define DEBUG if(0)
+
 using namespace std;
 
 extern int yylineno;
-
 
 enum DataType{
 	dt_none,
@@ -245,9 +246,9 @@ public:
 			if(symbols[i].find(id) !=  symbols[i].end()){
 				vector<Parameter> param_list =  symbols[i].find(id)->second.getParameterList();
 				vector<string> res;
-				for (std::vector<Parameter>::iterator i = param_list.begin(); i != param_list.end(); ++i)
+				for (std::vector<Parameter>::iterator x = param_list.begin(); x != param_list.end(); ++x)
 				{
-					res.push_back(i->getValue());
+					res.push_back(x->getValue() + ".int.1");
 				}
 				return res;
 			}
@@ -267,18 +268,24 @@ public:
 	vector<string> backup()
 	{
 		vector<string> back_var;
+
 		backup_symbols = symbols;
 
 		// backup symbol names for scope >= 1
 		for(int i = 1; i <= scope; i++)
 			for(map<string,SymbolTableAux>::iterator it = symbols[i].begin(); it != symbols[i].end(); ++it)
+			{
 				back_var.push_back(gen_mips(it->first));
+			}
 
 		// pop the symbols of scope >0 from the symbol table
 		for(int i = scope ; i > 0; i--)
 			symbols.pop_back();
 
 		scope = 0;
+		for(int i = 0; i < back_var.size(); i++){
+			cout<<"ABHI" << back_var[i]<<endl;
+		}
 		return back_var;
 	}
 
@@ -458,10 +465,12 @@ public:
 			inside_loop = false;
 
 		} else if (node_type == "for_loop" ){
+			symtab.addScope();
 			analyse(node->child1);
 			analyse(node->child2);
 			analyse(node->child3);
 			analyse(node->child4);
+			symtab.removeScope();
 
 		} else if (node_type == "for_each_loop" ){
 			// Analyse the children
@@ -868,6 +877,7 @@ public:
 	}
 
 	void copy(string src, string dst){
+		// cout<<"ROOPANSH" << dst << " : " << symtab.gen_mips(dst) << endl;
 		mips_1 << "lw\t$t8, " << src << endl;
 		mips_1 << "sw\t$t8, " << dst << endl;
 	}
@@ -968,8 +978,8 @@ public:
 			intermediate_code << tree->getValue() << " : " <<endl;
 
 			symtab.addFunction(label, dt_int, params);
-			symtab.addScope();
 
+			symtab.addScope();
 			for(int i=0;i<params.size();i++)
 			{
 				symtab.addVariableInCurrentScope(params[i].getValue(), params[i].getDataType());
@@ -1162,19 +1172,25 @@ public:
 			continues.push_back(start);
 
 			putLabel(start);
+			intermediate_code << start << " : "<<endl;
 			pair<string, DataType> a = generateCode(tree->child1);
 
 			loadInRegister(a.first, "t1", a.second);
 			condition("t1", middle);
 			Jump(end);
+			intermediate_code << "if ( " << a.first << " > 0 ) jump " << middle << endl;
+			intermediate_code << "jump " << end<<endl;
 			putLabel(middle);
-
+			intermediate_code << middle << " : "<<endl;
 			symtab.addScope();
 			pair<string, DataType> b = generateCode(tree->child2);
 			symtab.removeScope();
 
 			Jump(start);
 			putLabel(end);
+
+			intermediate_code << "jump " << start <<endl;
+			intermediate_code << end << " : "<<endl;
 
 			breaks.pop_back();
 			continues.pop_back();
@@ -1188,6 +1204,7 @@ public:
 
 				loadInRegister(a.first, "t1", a.second);
 				functionReturnValue("t1");
+				intermediate_code << "return " << a.first << endl;
 			}
 			ReturnFunc();
 
@@ -1197,12 +1214,14 @@ public:
 			pair<string, DataType> a = generateCode(tree->child1);
 			loadInRegister(a.first, "t1", a.second);
 			readCode("t1");
+			intermediate_code << "read " << a.first << endl;
 			return a;
 
 		} else if ( node_type == "write") {
 			pair<string, DataType> a = generateCode(tree->child1);
 			loadInRegister(a.first, "t1", a.second);
 			writeCode("t1");
+			intermediate_code << "write " << a.first << endl;
 			return a;
 
 		} else if ( node_type == "expression") {
@@ -1212,6 +1231,7 @@ public:
 				b = generateCode(tree->child1);
 				loadInRegister(a.first, "t0", a.second);
 				storeInMemory(b.first, b.second);
+				intermediate_code << b.first << " = " << a.first <<endl;
 			} else {
 				b = generateCode(tree->child1);
 			}
@@ -1219,6 +1239,8 @@ public:
 
 			loadInRegister(b.first, "t0", b.second);
 			storeInMemory(ret.first, b.second);
+			intermediate_code << ret.first << " = " << b.first <<endl;
+
 			return ret;
 
 		} else if ( node_type == "logical_expression") {
@@ -1231,6 +1253,9 @@ public:
 				loadInRegister(a.first, "t2", a.second);
 				operate("||");
 				storeInMemory(ret.first, dt_bool);
+
+				intermediate_code << ret.first << " = " << a.first << " || " << b.first << endl;
+
 				return ret;
 
 			} else {
@@ -1247,6 +1272,7 @@ public:
 				loadInRegister(a.first, "t2", a.second);
 				operate("&&");
 				storeInMemory(ret.first, dt_bool);
+				intermediate_code << ret.first << " = " << a.first << " && " << b.first << endl;
 				return ret;
 
 			} else {
@@ -1265,13 +1291,14 @@ public:
 				loadInRegister(a.first, "t2", a.second);
 				operate(c.first);
 				storeInMemory(ret.first, dt_bool);
+				intermediate_code << ret.first << " = " << a.first << " " << c.first << " " << b.first << endl;
 				return ret;
 			} else {
 				return generateCode(tree->child1);
 			}
 
 		} else if ( node_type == "simple_expression") {
-			if(tree->getValue() == "op")
+			if(tree->child3 != NULL)
 			{
 				pair<string, DataType> a = generateCode(tree->child3);
 				pair<string, DataType> b = generateCode(tree->child1);
@@ -1282,13 +1309,14 @@ public:
 				loadInRegister(a.first, "t2", a.second);
 				operate(c.first);
 				storeInMemory(ret.first, DatatypeCoercible(a.second, b.second));
+				intermediate_code << ret.first << " = " << a.first << " " << c.first << " " << b.first << endl;
 				return ret;
 			} else {
 				return generateCode(tree->child1);
 			}
 
 		} else if ( node_type == "divmul_expression") {
-			if(tree->getValue() == "op")
+			if(tree->child3 != NULL)
 			{
 				pair<string, DataType> a = generateCode(tree->child3);
 				pair<string, DataType> b = generateCode(tree->child1);
@@ -1299,13 +1327,15 @@ public:
 				loadInRegister(a.first, "t2", a.second);
 				operate(c.first);
 				storeInMemory(ret.first, DatatypeCoercible(a.second, b.second));
+				intermediate_code << ret.first << " = " << a.first << " " << c.first << " " << b.first << endl;
 				return ret;
 			} else {
 				return generateCode(tree->child1);
 			}
 
 		} else if ( node_type == "unary_expression") {
-			if(tree->getValue() == "op") {
+			if(tree->child3 != NULL){
+
 				pair<string, DataType> a = generateCode(tree->child2);
 				pair<string, DataType> b = generateCode(tree->child1);
 				pair<string, DataType> ret = getNextTempVar();
@@ -1314,6 +1344,7 @@ public:
 				loadInRegister(a.first, "t2", a.second);
 				operate(b.first);
 				storeInMemory(ret.first, DatatypeCoercible(a.second, b.second));
+				intermediate_code << ret.first << " = " << a.first << " " << b.first << " 0" << endl;
 				return make_pair(ret.first, ret.second);
 			} else {
 				return generateCode(tree->child1);
@@ -1327,7 +1358,7 @@ public:
 
 		} else if ( node_type == "function_call") {
 			//evaluate arguments
-
+			intermediate_code << "call " << tree->getValue() <<endl;
 			vector<string> args = expandArgumentsList(tree->child1);
 			vector<string> pars = symtab.getFunctionParameters("_" + tree->getValue() + "_." + to_string(args.size()));
 
@@ -1374,6 +1405,7 @@ public:
 		} else if (node_type == "write_string") {
 			loadInRegister(tree->child1->getValue(), "t0", dt_string);
 			writeStringCode("t0");
+			intermediate_code << "puts " << tree->child1->getValue() <<endl;
 			return make_pair("", dt_int);
 
 		} else if ( node_type == "unary_operator" || node_type == "operator3" || node_type == "operator2" || node_type == "operator1") {

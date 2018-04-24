@@ -39,3 +39,5 @@ src/parser.tab.h
 src/compiler
 src/mips.s
 src/sample.c
+src/intermediate.txt
+src/tree.txt

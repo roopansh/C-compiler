@@ -10,4 +10,4 @@ parser.tab.c parser.tab.h :	parser.y compile.h
 	bison -d -v parser.y
 
 clean:
-	rm lex.yy.c parser.tab.c parser.tab.h parser.output compiler
+	rm lex.yy.c parser.tab.c parser.tab.h parser.output compiler mips.s sample* intermediate.txt tree.txt

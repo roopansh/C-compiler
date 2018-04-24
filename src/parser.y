@@ -209,31 +209,31 @@ relational_expression 	:	relational_expression operator3 simple_expression
 						;
 
 simple_expression 	:	simple_expression operator1 divmul_expression
-						{$$ = new Node("simple_expression","op", $1, $2, $3);}
+						{$$ = new Node("simple_expression",$1->getValue() + $2->getValue() + $3->getValue(), $1, $2, $3);}
 					|	divmul_expression
-						{$$ = new Node("simple_expression","", $1, NULL, NULL);}
+						{$$ = new Node("simple_expression",$1->getValue(), $1, NULL, NULL);}
 					;
 
 divmul_expression 	: 	divmul_expression operator2 unary_expression
-						{$$ = new Node("divmul_expression","op", $1, $2, $3);}
+						{$$ = new Node("divmul_expression", $1->getValue() + $2->getValue() + $3->getValue(), $1, $2, $3);}
 					| 	unary_expression
-						{$$ = new Node("divmul_expression","", $1, NULL, NULL);}
+						{$$ = new Node("divmul_expression",$1->getValue(), $1, NULL, NULL);}
 					;
 
 unary_expression 	: 	unary_operator term
-						{$$ = new Node("unary_expression","", $1, $2, NULL);}
+						{$$ = new Node("unary_expression",$1->getValue() + $2->getValue(), $1, $2, NULL);}
 					| 	term
-						{$$ = new Node("unary_expression","", $1, NULL, NULL);}
+						{$$ = new Node("unary_expression",$1->getValue(), $1, NULL, NULL);}
 					;
 
 term 	:	LB_ROUND expression RB_ROUND
 			{$$ = new Node("term","", $2, NULL, NULL);}
 		| 	function_call
-			{$$ = new Node("term","", $1, NULL, NULL);}
+			{$$ = new Node("term",$1->getValue(), $1, NULL, NULL);}
 		|	constants
-			{$$ = new Node("term","", $1, NULL, NULL);}
+			{$$ = new Node("term",$1->getValue(), $1, NULL, NULL);}
 		|	variable
-			{$$ = new Node("term","", $1, NULL, NULL);}
+			{$$ = new Node("term",$1->getValue(), $1, NULL, NULL);}
 		;
 
 function_call 	:	IDENTIFIER LB_ROUND args RB_ROUND
@@ -246,10 +246,10 @@ args 	:  	args_list
 			{$$ = new Node("args", "", NULL, NULL, NULL);}
 		;
 
-args_list	:	args_list COMMA expression
-				{$$ = new Node("args_list", "", $1, $3, NULL);}
-			| 	expression
-				{$$ = new Node("args_list", "", $1, NULL, NULL);}
+args_list	:	args_list COMMA simple_expression
+				{$$ = new Node("args_list", $3->getValue(), $1, $3, NULL);}
+			|	simple_expression
+				{$$ = new Node("args_list", $1->getValue() , $1, NULL, NULL);}
 			;
 
 constants 	:	INTEGERS
