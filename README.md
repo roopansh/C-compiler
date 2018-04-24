@@ -20,7 +20,7 @@ Compiler for a C-like language. Converts the code to MIPS Assembly Language whic
 
 ## Features of the Language
 
-* Data types : void, int, bool, char, string
+* Data types : void, int, float, bool, char, string
 
 * Variable Declaration
 
